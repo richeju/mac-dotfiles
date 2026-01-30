@@ -2,7 +2,3 @@ cask "vlc"                  # Media player
 cask "nvidia-geforce-now"  # Cloud gaming
 cask "discord"            # Gaming communication
 cask "bitwarden"          # Password manager
-# pCloud requires third-party tap
-tap "lyraphase/pcloud"
-
-cask "lyraphase/pcloud/pcloud-drive"  # Cloud storage
