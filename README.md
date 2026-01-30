@@ -56,3 +56,43 @@ chmod +x install.sh
 ## 🔐 Security
 
 The script is **public** and can be audited before execution. No sensitive information is stored in this repository.
+
+
+## 📦 Additional Packages
+
+After the initial setup, chezmoi will install additional tools from the Brewfile:
+
+- **jq**: command-line JSON processor
+- **tree**: directory structure visualization
+- **htop**: interactive process viewer
+- **bat**: improved cat with syntax highlighting
+- **fzf**: fuzzy finder
+
+## 🔧 Managing Your Dotfiles with chezmoi
+
+Once installed, you can manage your dotfiles with chezmoi:
+
+### Edit configuration files
+```bash
+chezmoi edit ~/.gitconfig
+```
+
+### Apply changes
+```bash
+chezmoi apply
+```
+
+### See what would change
+```bash
+chezmoi diff
+```
+
+### Add new dotfiles
+```bash
+chezmoi add ~/.zshrc
+```
+
+### Update from the repository
+```bash
+chezmoi update
+```
