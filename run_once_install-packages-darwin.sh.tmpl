@@ -1,0 +1,23 @@
+{{- if eq .chezmoi.os "darwin" -}}
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "› Installing Homebrew packages from global Brewfile (~/.Brewfile)..."
+
+if ! command -v brew >/dev/null 2>&1; then
+  echo "✗ Homebrew is not installed. Please run the bootstrap install.sh first."
+  exit 1
+fi
+
+BREWFILE="${HOME}/.Brewfile"
+
+if [ ! -f "${BREWFILE}" ]; then
+  echo "No ${BREWFILE} found, skipping brew bundle."
+  exit 0
+fi
+
+# Use the global Brewfile (~/.Brewfile)
+brew bundle --global
+
+echo "✓ Homebrew packages installed."
+{{- end -}}
