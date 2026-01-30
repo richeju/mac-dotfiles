@@ -4,7 +4,3 @@ cask "discord"            # Gaming communication
 cask "bitwarden"          # Password manager
 cask "dropbox"            # Cloud storage
 cask "raycast"              # Productivity launcher
-cask "rectangle"             # Window management
-cask "iterm2"                # Better terminal
-cask "spotify"               # Music streaming
-cask "wireshark"             # Network analyzer
