@@ -1,6 +1,2 @@
-# Taps
-tap "homebrew/cask"
-
-# Applications
 cask "vlc"                  # Media player
 cask "nvidia-geforce-now"  # Cloud gaming
