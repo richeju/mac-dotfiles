@@ -2,3 +2,5 @@ cask "vlc"                  # Media player
 cask "nvidia-geforce-now"  # Cloud gaming
 cask "discord"            # Gaming communication
 cask "bitwarden"          # Password manager
+cask "konzertmeister"     # Music learning and practice
+cask "dropbox"            # Cloud storage
