@@ -1,0 +1,27 @@
+#!/bin/bash
+# run_onchange_install-packages-darwin.sh.tmpl
+# This script runs whenever the Brewfile hash changes
+
+# chezmoi:template:left-delimiter=#{{ right-delimiter=#}}
+# Hash: #{{ include "dot_Brewfile" | sha256sum }}#
+
+set -e
+
+echo "📦 Installing/updating packages from Brewfile..."
+
+if ! command -v brew &> /dev/null; then
+    echo "❌ Homebrew is not installed. Please run install.sh first."
+    exit 1
+fi
+
+# Run brew bundle from home directory where .Brewfile is located
+cd "$HOME"
+
+if [ -f "$HOME/.Brewfile" ]; then
+    echo "📋 Found Brewfile at $HOME/.Brewfile"
+    brew bundle --global --verbose
+    echo "✅ Packages installed/updated successfully!"
+else
+    echo "⚠️  No Brewfile found at $HOME/.Brewfile"
+    exit 1
+fi
