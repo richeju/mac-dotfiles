@@ -1,0 +1,22 @@
+# Ignore repo files
+README.md
+install.sh
+
+# Ignore sensitive files
+.ssh/
+.gnupg/
+.aws/
+*.key
+*.pem
+*.p12
+*.crt
+*.cer
+
+# Ignore cache and logs
+.cache/
+.log
+*.log
+
+# Ignore local config
+.env
+.env.local
