@@ -5,6 +5,7 @@
 
 set -e
 
+
 echo "🚀 macOS Bootstrap Script"
 echo "========================="
 
@@ -17,6 +18,21 @@ NC='\033[0m' # No Color
 log_info() { echo -e "${GREEN}✓${NC} $1"; }
 log_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
 log_error() { echo -e "${RED}✗${NC} $1"; exit 1; }
+
+# Check if user has sudo access
+log_info "Checking sudo access..."
+if ! sudo -n true 2>/dev/null; then
+    echo ""
+    echo "${YELLOW}⚠️  This script requires administrator privileges.${NC}"
+    echo "You will be prompted for your password to install system packages."
+    echo ""
+    if ! sudo -v; then
+        log_error "Failed to obtain sudo privileges. Please make sure you have administrator access."
+    fi
+fi
+
+# Keep sudo alive
+while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 
 # Verify macOS
 if [[ "$OSTYPE" != "darwin"* ]]; then
