@@ -2,9 +2,7 @@
 # run_onchange_install-packages-darwin.sh.tmpl
 # This script runs whenever the Brewfile hash changes
 
-# chezmoi:template:left-delimiter=#{{ right-delimiter=#}}
-# Hash: #{{ include "dot_Brewfile" | sha256sum }}#
-
+# Hash: {{ include "dot_Brewfile" | sha256sum }}
 set -e
 
 echo "📦 Installing/updating packages from Brewfile..."
