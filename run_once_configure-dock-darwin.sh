@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
 echo "🎨 Configuring Dock..."
 
@@ -13,6 +13,6 @@ defaults write com.apple.dock mineffect -string "scale"
 defaults write com.apple.dock minimize-to-application -bool true
 defaults write com.apple.dock show-process-indicators -bool true
 
-killall Dock
+killall Dock || true
 
 echo "✅ Dock configured!"

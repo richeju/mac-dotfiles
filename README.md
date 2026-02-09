@@ -4,10 +4,18 @@ Automatic installation and configuration script for new macOS setup using [chezm
 
 ## 🚀 Quick Installation
 
-On a new Mac, run this command in Terminal:
+On a new Mac, run one of these in Terminal:
 
+Fast path:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash
+```
+
+Safer path (recommended):
+```bash
+curl -fsSL -o /tmp/mac-dotfiles-install.sh https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh
+less /tmp/mac-dotfiles-install.sh
+bash /tmp/mac-dotfiles-install.sh
 ```
 
 ## 📦 What Gets Installed
@@ -74,39 +82,39 @@ Daily automatic tasks:
 
 #### Edit configuration files
 ```bash
-chemzoi edit ~/.gitconfig
+chezmoi edit ~/.gitconfig
 ```
 
 #### Apply changes
 ```bash
-chemzoi apply
+chezmoi apply
 ```
 
 #### See what would change
 ```bash
-chemzoi diff
+chezmoi diff
 ```
 
 #### Add new dotfiles
 ```bash
-chemzoi add ~/.zshrc
+chezmoi add ~/.zshrc
 ```
 
 #### Update from repository
 ```bash
-chemzoi update --apply
+chezmoi update --apply
 ```
 
 ### Adding Applications
 
 Edit `dot_Brewfile` on GitHub or locally:
 ```bash
-chemzoi edit ~/.Brewfile
+chezmoi edit ~/.Brewfile
 ```
 
 Then update:
 ```bash
-chemzoi update --apply
+chezmoi update --apply
 ```
 
 Applications will be automatically installed!
@@ -140,13 +148,13 @@ The scripts are **public** and can be audited before execution. No sensitive inf
 To pull the latest changes from this repository:
 
 ```bash
-chemzoi update
+chezmoi update
 ```
 
 To update and apply changes:
 
 ```bash
-chemzoi update --apply
+chezmoi update --apply
 ```
 
 ## 👏 Contributing

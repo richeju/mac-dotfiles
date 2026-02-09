@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # run_onchange_install-packages-darwin.sh.tmpl
 # This script runs whenever the Brewfile hash changes
 
 # Hash: {{ include "dot_Brewfile" | sha256sum }}
-set -e
+set -euo pipefail
 
 echo "📦 Installing/updating packages from Brewfile..."
 
