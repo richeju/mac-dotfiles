@@ -1,7 +1,7 @@
-cask "vlc"                  # Media player
-cask "nvidia-geforce-now"  # Cloud gaming
-cask "discord"            # Gaming communication
-cask "bitwarden"          # Password manager
-cask "dropbox"            # Cloud storage
-cask "raycast"              # Productivity launcher
-cask "signal"                # Messaging app
+cask "bitwarden"              # Password manager
+cask "discord"                # Gaming communication
+cask "dropbox"                # Cloud storage
+cask "nvidia-geforce-now"     # Cloud gaming
+cask "raycast"                # Productivity launcher
+cask "signal"                 # Messaging app
+cask "vlc"                    # Media player
