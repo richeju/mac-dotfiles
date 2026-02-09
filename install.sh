@@ -25,6 +25,18 @@ require_command() {
     fi
 }
 
+ensure_brew_in_path() {
+    if command -v brew &>/dev/null; then
+        return 0
+    fi
+
+    if [[ -x /opt/homebrew/bin/brew ]]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [[ -x /usr/local/bin/brew ]]; then
+        eval "$(/usr/local/bin/brew shellenv)"
+    fi
+}
+
 SUDO_KEEPALIVE_PID=""
 start_sudo_keepalive() {
     while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
@@ -59,6 +71,7 @@ if [[ "$OSTYPE" != "darwin"* ]]; then
 fi
 
 require_command curl
+ensure_brew_in_path
 
 # Install Homebrew
 if ! command -v brew &> /dev/null; then
@@ -71,6 +84,7 @@ if ! command -v brew &> /dev/null; then
         eval "$(/opt/homebrew/bin/brew shellenv)"
     fi
 else
+    ensure_brew_in_path
     log_info "Homebrew already installed"
 fi
 
