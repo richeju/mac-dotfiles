@@ -11,6 +11,11 @@ Fast path:
 curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash
 ```
 
+Zero-interaction mode (for full automation):
+```bash
+curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash -s -- --auto --git-name "Your Name" --git-email "you@example.com"
+```
+
 Safer path (recommended):
 ```bash
 curl -fsSL -o /tmp/mac-dotfiles-install.sh https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh
@@ -75,6 +80,21 @@ Daily automatic tasks:
 - Cleanup old versions
 - System diagnostics
 - Cache statistics
+
+
+### Fully Automated Installation
+
+If you want a fully unattended setup, use `--auto` with Git identity values:
+
+```bash
+bash install.sh --auto --git-name "Your Name" --git-email "you@example.com"
+```
+
+You can also use environment variables:
+
+```bash
+AUTO=1 GIT_NAME="Your Name" GIT_EMAIL="you@example.com" bash install.sh
+```
 
 ## 📚 Usage
 
