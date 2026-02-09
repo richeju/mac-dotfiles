@@ -5,6 +5,61 @@
 
 set -euo pipefail
 
+AUTO_MODE="false"
+GIT_NAME="${GIT_NAME:-}"
+GIT_EMAIL="${GIT_EMAIL:-}"
+
+usage() {
+    cat <<'USAGE'
+Usage: install.sh [options]
+
+Options:
+  --auto                 Run in non-interactive mode
+  --git-name <name>      Git user name (required with --auto if GIT_NAME env not set)
+  --git-email <email>    Git user email (required with --auto if GIT_EMAIL env not set)
+  -h, --help             Show this help
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --auto)
+            AUTO_MODE="true"
+            shift
+            ;;
+        --git-name)
+            [[ $# -lt 2 ]] && { echo "Missing value for --git-name"; exit 1; }
+            GIT_NAME="$2"
+            shift 2
+            ;;
+        --git-email)
+            [[ $# -lt 2 ]] && { echo "Missing value for --git-email"; exit 1; }
+            GIT_EMAIL="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+
+done
+
+if [[ "${AUTO:-0}" == "1" ]]; then
+    AUTO_MODE="true"
+fi
+
+if [[ "$AUTO_MODE" == "true" ]]; then
+    if [[ -z "$GIT_NAME" || -z "$GIT_EMAIL" ]]; then
+        echo "In --auto mode, provide --git-name and --git-email (or GIT_NAME/GIT_EMAIL env vars)."
+        exit 1
+    fi
+fi
 
 echo "🚀 macOS Bootstrap Script"
 echo "========================="
@@ -77,7 +132,7 @@ ensure_brew_in_path
 if ! command -v brew &> /dev/null; then
     log_info "Installing Homebrew..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    
+
     # Add Homebrew to PATH for Apple Silicon
     if [[ $(uname -m) == 'arm64' ]]; then
         echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
@@ -108,7 +163,13 @@ if [ -d "$HOME/.local/share/chezmoi" ]; then
     log_info "Run 'chezmoi update' to sync your dotfiles"
 else
     log_info "Initializing chezmoi with your dotfiles..."
-    chezmoi init --apply richeju/mac-dotfiles
+    if [[ "$AUTO_MODE" == "true" ]]; then
+        log_info "Running in auto mode (non-interactive)"
+        chezmoi init --apply --promptBool=false --promptInt=false --promptString=false \
+            --data "name=$GIT_NAME" --data "email=$GIT_EMAIL" richeju/mac-dotfiles
+    else
+        chezmoi init --apply richeju/mac-dotfiles
+    fi
 fi
 
 echo ""
