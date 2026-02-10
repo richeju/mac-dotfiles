@@ -5,8 +5,41 @@ set -euo pipefail
 PLIST="$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist"
 
 if [[ ! -f "$PLIST" ]]; then
-    echo "⚠️  Maintenance LaunchAgent plist not found at $PLIST"
-    exit 0
+    echo "ℹ️  LaunchAgent plist missing, creating it at $PLIST"
+    mkdir -p "$(dirname "$PLIST")"
+    cat > "$PLIST" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chezmoi.mac-dotfiles.maintenance</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>{{ .chezmoi.homeDir }}/.local/bin/mac-dotfiles-maintenance.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>{{ .chezmoi.homeDir }}/.local/state/mac-dotfiles/launchd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>{{ .chezmoi.homeDir }}/.local/state/mac-dotfiles/launchd.log</string>
+</dict>
+</plist>
+EOF
 fi
 
 echo "🤖 Enabling daily maintenance LaunchAgent..."
