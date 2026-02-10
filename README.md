@@ -73,13 +73,14 @@ Automatically configured on first run:
 - Process indicators enabled
 
 ### Automated Maintenance
-Daily automatic tasks:
+Daily automatic tasks (via macOS LaunchAgent):
 - Homebrew update
 - Package upgrades
 - Application (cask) upgrades
 - Cleanup old versions
 - System diagnostics
 - Cache statistics
+- Scheduled every day at 04:00 + at login
 
 
 ### Fully Automated Installation
@@ -168,7 +169,10 @@ brew bundle --global --verbose
 - `doctor.sh` - Health check script for dependencies and dotfile status
 - `run_once_configure-dock-darwin.sh` - Dock configuration (runs once)
 - `run_onchange_install-packages-darwin.sh.tmpl` - Package installer (runs when Brewfile changes)
-- `run_onchange_update-and-cleanup-darwin.sh.tmpl` - Maintenance script (runs daily)
+- `run_onchange_update-and-cleanup-darwin.sh.tmpl` - Maintenance script triggered when template changes
+- `dot_local/bin/executable_mac-dotfiles-maintenance.sh.tmpl` - Daily maintenance runner written to `~/.local/bin`
+- `dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl` - LaunchAgent scheduled at 04:00 + run at login
+- `run_once_enable-maintenance-launchagent-darwin.sh.tmpl` - Loads/enables the LaunchAgent automatically
 
 ## ℹ️ Notes
 
