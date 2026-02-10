@@ -28,7 +28,9 @@ brew cleanup -s
 
 echo ""
 echo "🔍 Running diagnostics..."
-brew doctor || true
+if ! brew doctor; then
+    echo "⚠️  brew doctor reported issues. Review the output above."
+fi
 
 echo ""
 echo "📊 Cache statistics:"
