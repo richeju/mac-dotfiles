@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # run_onchange_install-packages-darwin.sh.tmpl
-# This script runs whenever the Brewfile hash changes
+# This script runs whenever dot_Brewfile changes.
+# dot_Brewfile is rendered by chezmoi as ~/.Brewfile.
 
 # Hash: {{ include "dot_Brewfile" | sha256sum }}
 set -euo pipefail

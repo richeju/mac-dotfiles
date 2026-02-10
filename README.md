@@ -6,6 +6,13 @@ Automatic installation and configuration script for new macOS setup using [chezm
 
 On a new Mac, run one of these in Terminal:
 
+Safer path (recommended):
+```bash
+curl -fsSL -o /tmp/mac-dotfiles-install.sh https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh
+less /tmp/mac-dotfiles-install.sh
+bash /tmp/mac-dotfiles-install.sh
+```
+
 Fast path:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash
@@ -14,13 +21,6 @@ curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.s
 Zero-interaction mode (for full automation):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash -s -- --auto --git-name "Your Name" --git-email "you@example.com"
-```
-
-Safer path (recommended):
-```bash
-curl -fsSL -o /tmp/mac-dotfiles-install.sh https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh
-less /tmp/mac-dotfiles-install.sh
-bash /tmp/mac-dotfiles-install.sh
 ```
 
 ## 📦 What Gets Installed
@@ -141,10 +141,21 @@ Applications will be automatically installed!
 
 ## 📁 Repository Structure
 
-- `.chezmoi.toml.tmpl` - chezmoi configuration template
-- `.chezmoiignore` - Files to ignore
-- `Brewfile` - Initial Homebrew packages
-- `dot_Brewfile` - User Homebrew packages
+### Brewfile Strategy
+
+This repository uses two Homebrew manifests for different purposes:
+
+- `Brewfile`: a repo-level list for bootstrap/development references.
+- `dot_Brewfile`: the user-level list rendered by chezmoi to `~/.Brewfile`.
+
+The `run_onchange_install-packages-darwin.sh.tmpl` script installs from `~/.Brewfile` using:
+
+```bash
+brew bundle --global --verbose
+```
+
+- `Brewfile` - Bootstrap/development packages tracked in the repo
+- `dot_Brewfile` - Rendered to `~/.Brewfile`, used by `brew bundle --global`
 - `dot_gitconfig.tmpl` - Git configuration template
 - `install.sh` - Initial installation script
 - `run_once_configure-dock-darwin.sh` - Dock configuration (runs once)
