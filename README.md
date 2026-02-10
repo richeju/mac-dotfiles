@@ -120,6 +120,13 @@ chezmoi diff
 chezmoi add ~/.zshrc
 ```
 
+#### Run a health check
+```bash
+./doctor.sh
+```
+
+This script validates core dependencies (`git`, `curl`, `brew`, `chezmoi`), checks Homebrew bundle status, and confirms whether there are pending chezmoi changes.
+
 #### Update from repository
 ```bash
 chezmoi update --apply
@@ -158,6 +165,7 @@ brew bundle --global --verbose
 - `dot_Brewfile` - Rendered to `~/.Brewfile`, used by `brew bundle --global`
 - `dot_gitconfig.tmpl` - Git configuration template
 - `install.sh` - Initial installation script
+- `doctor.sh` - Health check script for dependencies and dotfile status
 - `run_once_configure-dock-darwin.sh` - Dock configuration (runs once)
 - `run_onchange_install-packages-darwin.sh.tmpl` - Package installer (runs when Brewfile changes)
 - `run_onchange_update-and-cleanup-darwin.sh.tmpl` - Maintenance script (runs daily)
