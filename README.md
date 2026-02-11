@@ -126,7 +126,13 @@ chezmoi add ~/.zshrc
 ./doctor.sh
 ```
 
-This script validates core dependencies (`git`, `curl`, `brew`, `chezmoi`), checks Homebrew bundle status, and confirms whether there are pending chezmoi changes.
+Optional modes:
+```bash
+./doctor.sh --fix   # attempt safe auto-fixes (brew bundle + chezmoi apply)
+./doctor.sh --json  # emit a JSON summary report
+```
+
+The doctor script validates core dependencies (`git`, `curl`, `brew`, `chezmoi`), checks minimum versions for `git` and `chezmoi`, verifies Homebrew bundle status, confirms whether there are pending chezmoi changes, and detects broken symlinks for key managed files.
 
 #### Update from repository
 ```bash
