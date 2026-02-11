@@ -72,6 +72,18 @@ Automatically configured on first run:
 - Minimize to application
 - Process indicators enabled
 
+### macOS Hardening Baseline
+Automatically applied once (via chezmoi `run_once_*`) with practical, low-friction hardening defaults:
+- Require password immediately after sleep/screensaver lock
+- Always show filename extensions
+- Show hidden files in Finder
+- Keep extension change warning enabled
+- Keep downloaded files quarantined (`LSQuarantine`)
+- Disable Safari auto-open of downloaded files
+- Enable Safari Do Not Track and disable search suggestions
+
+This is a lightweight baseline inspired by common NIST/CIS hardening themes for endpoint visibility, session lock enforcement, and safer handling of downloaded content.
+
 ### Automated Maintenance
 Daily automatic tasks (via macOS LaunchAgent):
 - Homebrew update
@@ -174,6 +186,7 @@ brew bundle --global --verbose
 - `install.sh` - Initial installation script
 - `doctor.sh` - Health check script for dependencies and dotfile status
 - `run_once_configure-dock-darwin.sh` - Dock configuration (runs once)
+- `run_once_harden-macos-baseline-darwin.sh` - Applies a one-time macOS hardening baseline
 - `run_onchange_install-packages-darwin.sh.tmpl` - Package installer (runs when Brewfile changes)
 - `run_onchange_update-and-cleanup-darwin.sh.tmpl` - Maintenance script triggered when template changes
 - `dot_local/bin/executable_mac-dotfiles-maintenance.sh.tmpl` - Daily maintenance runner written to `~/.local/bin`
