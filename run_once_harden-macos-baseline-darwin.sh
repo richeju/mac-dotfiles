@@ -33,9 +33,11 @@ if command -v pmset >/dev/null 2>&1; then
   if sudo -n true >/dev/null 2>&1; then
     pmset_caps="$(pmset -g cap 2>/dev/null || true)"
 
-    # Disable Power Nap on AC power.
-    if grep -q " powernap" <<<"$pmset_caps"; then
-      sudo pmset -c powernap 0
+    # Optionally disable Power Nap on AC power (opt-in to avoid intrusive defaults).
+    if [[ "${HARDEN_DISABLE_POWERNAP_ON_AC:-0}" == "1" ]]; then
+      if grep -q " powernap" <<<"$pmset_caps"; then
+        sudo pmset -c powernap 0
+      fi
     fi
 
     # Disable wake on network access on AC power.
