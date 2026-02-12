@@ -28,6 +28,30 @@ defaults write com.apple.Safari SendDoNotTrackHTTPHeader -bool true
 defaults write com.apple.Safari UniversalSearchEnabled -bool false
 defaults write com.apple.Safari SuppressSearchSuggestions -bool true
 
+# Apply AC-only power/network hardening when supported.
+if command -v pmset >/dev/null 2>&1; then
+  if sudo -n true >/dev/null 2>&1; then
+    pmset_caps="$(pmset -g cap 2>/dev/null || true)"
+
+    # Disable Power Nap on AC power.
+    if grep -q " powernap" <<<"$pmset_caps"; then
+      sudo pmset -c powernap 0
+    fi
+
+    # Disable wake on network access on AC power.
+    if grep -q " womp" <<<"$pmset_caps"; then
+      sudo pmset -c womp 0
+    fi
+
+    # Disable proximity wake (e.g. nearby devices) on AC power.
+    if grep -q " proximitywake" <<<"$pmset_caps"; then
+      sudo pmset -c proximitywake 0
+    fi
+  else
+    echo "⚠️ Skipping AC power hardening: sudo credentials are required."
+  fi
+fi
+
 # Apply Finder-related changes.
 killall Finder >/dev/null 2>&1 || true
 
