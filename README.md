@@ -146,6 +146,8 @@ Optional modes:
 
 The doctor script validates core dependencies (`git`, `curl`, `brew`, `chezmoi`), checks minimum versions for `git` and `chezmoi`, verifies Homebrew bundle status, confirms whether there are pending chezmoi changes, and detects broken symlinks for key managed files.
 
+When run outside macOS (for example in Linux CI or a dev container), `doctor.sh` reports warnings for the platform and missing macOS tools (`brew`, `chezmoi`) by design.
+
 #### Update from repository
 ```bash
 chezmoi update --apply
