@@ -135,6 +135,7 @@ if ! command -v brew &> /dev/null; then
 
     # Add Homebrew to PATH for Apple Silicon
     if [[ $(uname -m) == 'arm64' ]]; then
+        # shellcheck disable=SC2016 # We intentionally persist this exact command string into .zprofile.
         BREW_SHELLENV_LINE='eval "$(/opt/homebrew/bin/brew shellenv)"'
         if [[ ! -f "$HOME/.zprofile" ]] || ! grep -Fqx "$BREW_SHELLENV_LINE" "$HOME/.zprofile"; then
             echo "$BREW_SHELLENV_LINE" >> "$HOME/.zprofile"
