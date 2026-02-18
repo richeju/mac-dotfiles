@@ -14,13 +14,16 @@
     <key>RunAtLoad</key>
     <true/>
 
-StartCalendarInterval
-  Hour {{ .data.maintenance.hour }}
-  Minute {{ .data.maintenance.minute }}
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>{{ .data.maintenance.hour }}</integer>
+        <key>Minute</key>
+        <integer>{{ .data.maintenance.minute }}</integer>
+    </dict>
 
     <key>StandardOutPath</key>
     <string>{{ .chezmoi.homeDir }}/.local/state/mac-dotfiles/launchd.log</string>
-
     <key>StandardErrorPath</key>
     <string>{{ .chezmoi.homeDir }}/.local/state/mac-dotfiles/launchd.log</string>
 </dict>
