@@ -13,4 +13,4 @@ defaults write com.apple.dock minimize-to-application -bool {{ .data.dock.minimi
 defaults write com.apple.dock show-process-indicators -bool {{ .data.dock.show_process_indicators }}
 
 killall Dock || true
-echo "Dock configured! (taille {{ .data.dock.size }}px)"
+echo "✅ Dock configuré (taille {{ .data.dock.size }}px)"
