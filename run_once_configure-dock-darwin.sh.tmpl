@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Configuring Dock..."
+
+defaults write com.apple.dock tilesize -int {{ .data.dock.size }}
+defaults write com.apple.dock autohide -bool {{ .data.dock.autohide }}
+defaults write com.apple.dock autohide-delay -float {{ .data.dock.autohide_delay }}
+defaults write com.apple.dock autohide-time-modifier -float {{ .data.dock.animation_speed }}
+defaults write com.apple.dock show-recents -bool {{ .data.dock.show_recents }}
+defaults write com.apple.dock mineffect -string "{{ .data.dock.minimize_effect }}"
+defaults write com.apple.dock minimize-to-application -bool {{ .data.dock.minimize_to_application }}
+defaults write com.apple.dock show-process-indicators -bool {{ .data.dock.show_process_indicators }}
+
+killall Dock || true
+echo "Dock configured! (taille {{ .data.dock.size }}px)"
