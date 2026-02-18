@@ -2,5 +2,22 @@
 {{- $email := or .email (env "GIT_EMAIL") (promptStringOnce . "email" "Email address") -}}
 
 [data]
-    name = {{ $name | quote }}
-    email = {{ $email | quote }}
+name = {{ $name | quote }}
+email = {{ $email | quote }}
+
+# === CUSTOM CONFIG HERE ===
+dock = { 
+  size = 48,
+  autohide = true,
+  autohide_delay = 0,
+  animation_speed = 0.5,
+  show_recents = false,
+  minimize_effect = "scale",
+  minimize_to_application = true,
+  show_process_indicators = true
+}
+
+maintenance = {
+  hour = 4,
+  minute = 0
+}
