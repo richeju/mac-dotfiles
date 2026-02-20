@@ -126,6 +126,30 @@ auto_fix_chezmoi() {
     return 1
 }
 
+run_check_with_optional_fix() {
+    local check_key="$1"
+    local success_message="$2"
+    local warn_message="$3"
+    local fix_success_message="$4"
+    local check_command="$5"
+    local fix_function="$6"
+
+    if eval "$check_command"; then
+        ok "$success_message"
+        record_check "$check_key" "ok" "No issue detected"
+        return
+    fi
+
+    warn "$warn_message"
+    if "$fix_function" && eval "$check_command"; then
+        ok "$fix_success_message"
+        record_check "$check_key" "ok" "Fixed via --fix"
+    else
+        record_check "$check_key" "warn" "Issue detected"
+        has_error=1
+    fi
+}
+
 check_broken_symlink() {
     local path="$1"
     local label="$2"
@@ -197,45 +221,33 @@ check_command brew
 check_command chezmoi
 
 if command -v git >/dev/null 2>&1; then
-    git_version="$(git --version | awk '{print $3}')"
-    check_min_version "git" "$git_version" "2.30.0"
+    local_git_version="$(git --version | awk '{print $3}')"
+    check_min_version "git" "$local_git_version" "2.30.0"
 fi
 
 if command -v chezmoi >/dev/null 2>&1; then
-    chezmoi_version="$(chezmoi --version | awk '{print $3}' | sed 's/v//')"
-    check_min_version "chezmoi" "$chezmoi_version" "2.0.0"
+    local_chezmoi_version="$(chezmoi --version | awk '{print $3}' | sed 's/v//')"
+    check_min_version "chezmoi" "$local_chezmoi_version" "2.0.0"
 fi
 
 if command -v brew >/dev/null 2>&1; then
-    if brew bundle check --global --quiet; then
-        ok "All Homebrew dependencies from ~/.Brewfile are installed"
-        record_check "brew-bundle" "ok" "All dependencies installed"
-    else
-        warn "Some Homebrew dependencies are missing (run: brew bundle --global --verbose)"
-        if auto_fix_brew_bundle && brew bundle check --global --quiet; then
-            ok "Homebrew dependencies fixed successfully"
-            record_check "brew-bundle" "ok" "Dependencies fixed via --fix"
-        else
-            record_check "brew-bundle" "warn" "Missing dependencies"
-            has_error=1
-        fi
-    fi
+    run_check_with_optional_fix \
+        "brew-bundle" \
+        "All Homebrew dependencies from ~/.Brewfile are installed" \
+        "Some Homebrew dependencies are missing (run: brew bundle --global --verbose)" \
+        "Homebrew dependencies fixed successfully" \
+        "brew bundle check --global --quiet" \
+        auto_fix_brew_bundle
 fi
 
 if command -v chezmoi >/dev/null 2>&1; then
-    if chezmoi diff --quiet; then
-        ok "No pending dotfile changes"
-        record_check "chezmoi-diff" "ok" "No pending changes"
-    else
-        warn "There are pending dotfile changes (run: chezmoi diff / chezmoi apply)"
-        if auto_fix_chezmoi && chezmoi diff --quiet; then
-            ok "Pending dotfile changes fixed successfully"
-            record_check "chezmoi-diff" "ok" "Pending changes fixed via --fix"
-        else
-            record_check "chezmoi-diff" "warn" "Pending changes"
-            has_error=1
-        fi
-    fi
+    run_check_with_optional_fix \
+        "chezmoi-diff" \
+        "No pending dotfile changes" \
+        "There are pending dotfile changes (run: chezmoi diff / chezmoi apply)" \
+        "Pending dotfile changes fixed successfully" \
+        "chezmoi diff --quiet" \
+        auto_fix_chezmoi
 fi
 
 check_broken_symlink "$HOME/.Brewfile" "Homebrew global Brewfile"
