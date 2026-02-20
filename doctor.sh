@@ -101,34 +101,37 @@ check_min_version() {
     fi
 }
 
-auto_fix_brew_bundle() {
-    if [[ "$FIX_MODE" -eq 1 ]]; then
-        info "Applying fix: brew bundle --global --verbose"
-        if brew bundle --global --verbose; then
-            ok "Auto-fix completed for Homebrew dependencies"
-            return 0
-        else
-            warn "Auto-fix failed for Homebrew dependencies"
-            return 1
-        fi
+run_autofix_command() {
+    local command_text="$1"
+    local success_message="$2"
+    local fail_message="$3"
+
+    if [[ "$FIX_MODE" -ne 1 ]]; then
+        return 1
     fi
 
+    info "Applying fix: $command_text"
+    if eval "$command_text"; then
+        ok "$success_message"
+        return 0
+    fi
+
+    warn "$fail_message"
     return 1
 }
 
-auto_fix_chezmoi() {
-    if [[ "$FIX_MODE" -eq 1 ]]; then
-        info "Applying fix: chezmoi apply"
-        if chezmoi apply; then
-            ok "Auto-fix completed for pending dotfile changes"
-            return 0
-        else
-            warn "Auto-fix failed for pending dotfile changes"
-            return 1
-        fi
-    fi
+auto_fix_brew_bundle() {
+    run_autofix_command \
+        "brew bundle --global --verbose" \
+        "Auto-fix completed for Homebrew dependencies" \
+        "Auto-fix failed for Homebrew dependencies"
+}
 
-    return 1
+auto_fix_chezmoi() {
+    run_autofix_command \
+        "chezmoi apply" \
+        "Auto-fix completed for pending dotfile changes" \
+        "Auto-fix failed for pending dotfile changes"
 }
 
 run_check_with_optional_fix() {
