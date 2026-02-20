@@ -15,17 +15,19 @@ error() { echo -e "${RED}✗${NC} $1"; }
 
 usage() {
     cat <<'USAGE'
-Usage: ./doctor.sh [--fix] [--json] [--help]
+Usage: ./doctor.sh [--fix] [--json] [--markdown] [--help]
 
 Options:
   --fix    Attempt safe automatic fixes when possible.
   --json   Print a machine-readable JSON summary at the end.
+  --markdown  Print a Markdown summary table (useful for issues/PRs).
   --help   Show this help.
 USAGE
 }
 
 FIX_MODE=0
 JSON_MODE=0
+MARKDOWN_MODE=0
 
 while (($#)); do
     case "$1" in
@@ -34,6 +36,9 @@ while (($#)); do
             ;;
         --json)
             JSON_MODE=1
+            ;;
+        --markdown)
+            MARKDOWN_MODE=1
             ;;
         --help|-h)
             usage
@@ -200,6 +205,35 @@ print_json_summary() {
     printf '}\n'
 }
 
+print_markdown_summary() {
+    local overall="✅ Healthy"
+    if [[ "$has_error" -ne 0 ]]; then
+        overall="⚠️ Attention needed"
+    fi
+
+    echo "## mac-dotfiles doctor report"
+    echo
+    echo "- Overall: ${overall}"
+    echo "- Fix mode: $([[ "$FIX_MODE" -eq 1 ]] && echo "enabled" || echo "disabled")"
+    echo
+    echo "| Check | Status | Message |"
+    echo "|---|---|---|"
+
+    local i icon
+    for i in "${!CHECK_NAMES[@]}"; do
+        case "${CHECK_STATUS[$i]}" in
+            ok) icon="✅ ok" ;;
+            warn) icon="⚠️ warn" ;;
+            *) icon="ℹ️ info" ;;
+        esac
+
+        printf '| `%s` | %s | %s |\n' \
+            "${CHECK_NAMES[$i]}" \
+            "$icon" \
+            "${CHECK_MESSAGE[$i]}"
+    done
+}
+
 echo "🩺 mac-dotfiles doctor"
 echo "======================="
 
@@ -257,6 +291,11 @@ check_broken_symlink "$HOME/.local/bin/mac-dotfiles-maintenance.sh" "Maintenance
 if [[ "$JSON_MODE" -eq 1 ]]; then
     echo
     print_json_summary
+fi
+
+if [[ "$MARKDOWN_MODE" -eq 1 ]]; then
+    echo
+    print_markdown_summary
 fi
 
 if [[ "$has_error" -eq 0 ]]; then
