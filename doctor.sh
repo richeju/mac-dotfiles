@@ -101,11 +101,14 @@ auto_fix_brew_bundle() {
         info "Applying fix: brew bundle --global --verbose"
         if brew bundle --global --verbose; then
             ok "Auto-fix completed for Homebrew dependencies"
+            return 0
         else
             warn "Auto-fix failed for Homebrew dependencies"
-            has_error=1
+            return 1
         fi
     fi
+
+    return 1
 }
 
 auto_fix_chezmoi() {
@@ -113,11 +116,14 @@ auto_fix_chezmoi() {
         info "Applying fix: chezmoi apply"
         if chezmoi apply; then
             ok "Auto-fix completed for pending dotfile changes"
+            return 0
         else
             warn "Auto-fix failed for pending dotfile changes"
-            has_error=1
+            return 1
         fi
     fi
+
+    return 1
 }
 
 check_broken_symlink() {
@@ -206,9 +212,13 @@ if command -v brew >/dev/null 2>&1; then
         record_check "brew-bundle" "ok" "All dependencies installed"
     else
         warn "Some Homebrew dependencies are missing (run: brew bundle --global --verbose)"
-        record_check "brew-bundle" "warn" "Missing dependencies"
-        has_error=1
-        auto_fix_brew_bundle
+        if auto_fix_brew_bundle && brew bundle check --global --quiet; then
+            ok "Homebrew dependencies fixed successfully"
+            record_check "brew-bundle" "ok" "Dependencies fixed via --fix"
+        else
+            record_check "brew-bundle" "warn" "Missing dependencies"
+            has_error=1
+        fi
     fi
 fi
 
@@ -218,9 +228,13 @@ if command -v chezmoi >/dev/null 2>&1; then
         record_check "chezmoi-diff" "ok" "No pending changes"
     else
         warn "There are pending dotfile changes (run: chezmoi diff / chezmoi apply)"
-        record_check "chezmoi-diff" "warn" "Pending changes"
-        has_error=1
-        auto_fix_chezmoi
+        if auto_fix_chezmoi && chezmoi diff --quiet; then
+            ok "Pending dotfile changes fixed successfully"
+            record_check "chezmoi-diff" "ok" "Pending changes fixed via --fix"
+        else
+            record_check "chezmoi-diff" "warn" "Pending changes"
+            has_error=1
+        fi
     fi
 fi
 

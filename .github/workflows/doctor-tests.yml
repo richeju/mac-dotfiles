@@ -1,0 +1,21 @@
+name: Doctor Script Tests
+
+on:
+  push:
+    branches:
+      - main
+      - work
+  pull_request:
+
+jobs:
+  doctor-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate shell syntax
+        run: bash -n doctor.sh tests/doctor_test.sh
+
+      - name: Run doctor test suite
+        run: bash tests/doctor_test.sh
