@@ -105,13 +105,14 @@ run_autofix_command() {
     local command_text="$1"
     local success_message="$2"
     local fail_message="$3"
+    shift 3
 
     if [[ "$FIX_MODE" -ne 1 ]]; then
         return 1
     fi
 
     info "Applying fix: $command_text"
-    if eval "$command_text"; then
+    if "$@"; then
         ok "$success_message"
         return 0
     fi
@@ -124,14 +125,16 @@ auto_fix_brew_bundle() {
     run_autofix_command \
         "brew bundle --global --verbose" \
         "Auto-fix completed for Homebrew dependencies" \
-        "Auto-fix failed for Homebrew dependencies"
+        "Auto-fix failed for Homebrew dependencies" \
+        brew bundle --global --verbose
 }
 
 auto_fix_chezmoi() {
     run_autofix_command \
         "chezmoi apply" \
         "Auto-fix completed for pending dotfile changes" \
-        "Auto-fix failed for pending dotfile changes"
+        "Auto-fix failed for pending dotfile changes" \
+        chezmoi apply
 }
 
 run_check_with_optional_fix() {
@@ -139,23 +142,33 @@ run_check_with_optional_fix() {
     local success_message="$2"
     local warn_message="$3"
     local fix_success_message="$4"
-    local check_command="$5"
+    local check_command_text="$5"
     local fix_function="$6"
+    shift 6
 
-    if eval "$check_command"; then
+    : "$check_command_text"
+
+    if "$@"; then
         ok "$success_message"
         record_check "$check_key" "ok" "No issue detected"
         return
     fi
 
     warn "$warn_message"
-    if "$fix_function" && eval "$check_command"; then
+    if "$fix_function" && "$@"; then
         ok "$fix_success_message"
         record_check "$check_key" "ok" "Fixed via --fix"
     else
         record_check "$check_key" "warn" "Issue detected"
         has_error=1
     fi
+}
+
+bool_label() {
+    local value="$1"
+    local true_label="$2"
+    local false_label="$3"
+    [[ "$value" -eq 1 ]] && echo "$true_label" || echo "$false_label"
 }
 
 check_broken_symlink() {
@@ -188,7 +201,7 @@ print_json_summary() {
 
     printf '{\n'
     printf '  "overall": "%s",\n' "$overall"
-    printf '  "fix_mode": %s,\n' "$([[ "$FIX_MODE" -eq 1 ]] && echo true || echo false)"
+    printf '  "fix_mode": %s,\n' "$(bool_label "$FIX_MODE" true false)"
     printf '  "checks": [\n'
 
     local i
@@ -217,7 +230,7 @@ print_markdown_summary() {
     echo "## mac-dotfiles doctor report"
     echo
     echo "- Overall: ${overall}"
-    echo "- Fix mode: $([[ "$FIX_MODE" -eq 1 ]] && echo "enabled" || echo "disabled")"
+    echo "- Fix mode: $(bool_label "$FIX_MODE" "enabled" "disabled")"
     echo
     echo "| Check | Status | Message |"
     echo "|---|---|---|"
@@ -274,7 +287,8 @@ if command -v brew >/dev/null 2>&1; then
         "Some Homebrew dependencies are missing (run: brew bundle --global --verbose)" \
         "Homebrew dependencies fixed successfully" \
         "brew bundle check --global --quiet" \
-        auto_fix_brew_bundle
+        auto_fix_brew_bundle \
+        brew bundle check --global --quiet
 fi
 
 if command -v chezmoi >/dev/null 2>&1; then
@@ -284,7 +298,8 @@ if command -v chezmoi >/dev/null 2>&1; then
         "There are pending dotfile changes (run: chezmoi diff / chezmoi apply)" \
         "Pending dotfile changes fixed successfully" \
         "chezmoi diff --quiet" \
-        auto_fix_chezmoi
+        auto_fix_chezmoi \
+        chezmoi diff --quiet
 fi
 
 check_broken_symlink "$HOME/.Brewfile" "Homebrew global Brewfile"
