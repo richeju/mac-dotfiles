@@ -127,6 +127,35 @@ test_happy_path_json() {
   assert_contains "$output" '"name": "platform", "status": "ok"' "JSON summary should include platform check"
 }
 
+test_happy_path_markdown() {
+  local env_dir
+  env_dir="$(setup_env)"
+  write_common_mocks "$env_dir"
+
+  local run_output status output
+  run_output="$(run_doctor "$env_dir" --markdown)"
+  status="$(parse_status "$run_output")"
+  output="$(strip_status_line "$run_output")"
+
+  assert_exit_code "$status" 0 "doctor --markdown happy path should exit successfully"
+  assert_contains "$output" "## mac-dotfiles doctor report" "Markdown summary should include title"
+  assert_contains "$output" '| `platform` | ✅ ok | Running on macOS |' "Markdown summary should include platform check"
+}
+
+test_unknown_argument_returns_error() {
+  local env_dir
+  env_dir="$(setup_env)"
+  write_common_mocks "$env_dir"
+
+  local run_output status output
+  run_output="$(run_doctor "$env_dir" --unknown-flag)"
+  status="$(parse_status "$run_output")"
+  output="$(strip_status_line "$run_output")"
+
+  assert_exit_code "$status" 2 "doctor with unknown argument should fail with usage exit code"
+  assert_contains "$output" "Unknown argument: --unknown-flag" "Unknown argument should be reported"
+}
+
 test_fix_mode_runs_autofix() {
   local env_dir
   env_dir="$(setup_env)"
@@ -216,8 +245,10 @@ BREW
 main() {
   test_help
   test_happy_path_json
+  test_happy_path_markdown
   test_fix_mode_runs_autofix
   test_fix_mode_reports_warning_when_fix_fails
+  test_unknown_argument_returns_error
   echo "[PASS] doctor.sh tests completed"
 }
 
