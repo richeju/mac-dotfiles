@@ -73,6 +73,16 @@ Automatically configured on first run:
 - Minimize to application
 - Process indicators enabled
 
+### Finder & Input Comfort Defaults
+Automatically configured on first run:
+- Finder status bar enabled
+- Finder path bar enabled
+- Finder default view set to list view
+- Keep folders on top in Finder list view
+- Expanded save panels by default
+- Faster keyboard repeat settings
+- Tap-to-click enabled for trackpads
+
 ### macOS Hardening Baseline
 Automatically applied once (via chezmoi `run_once_*`) with practical, low-friction hardening defaults:
 - Require password immediately after sleep/screensaver lock
@@ -193,6 +203,7 @@ brew bundle --global --verbose
 - `install.sh` - Initial installation script
 - `doctor.sh` - Health check script for dependencies and dotfile status
 - `run_once_configure-dock-darwin.sh` - Dock configuration (runs once)
+- `run_once_configure-finder-and-inputs-darwin.sh` - Finder and input comfort defaults (runs once)
 - `run_once_harden-macos-baseline-darwin.sh` - Applies a one-time macOS hardening baseline
 - `run_onchange_install-packages-darwin.sh.tmpl` - Package installer (runs when Brewfile changes)
 - `run_onchange_update-and-cleanup-darwin.sh.tmpl` - Maintenance script triggered when template changes
