@@ -4,13 +4,38 @@ set -euo pipefail
 
 LOG_DIR="$HOME/.local/state/mac-dotfiles"
 LOG_FILE="$LOG_DIR/maintenance.log"
+LOCK_DIR="$LOG_DIR/maintenance.lock"
+AUTO_CHEZMOI_UPDATE="${AUTO_CHEZMOI_UPDATE:-1}"
 
 mkdir -p "$LOG_DIR"
+
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo "⚠️  Maintenance already running (lock: $LOCK_DIR), skipping"
+    exit 0
+fi
+
+cleanup_lock() {
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+}
+trap cleanup_lock EXIT
 
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo ""
 echo "===== $(date '+%Y-%m-%d %H:%M:%S') :: mac-dotfiles maintenance ====="
+
+if [[ "$AUTO_CHEZMOI_UPDATE" == "1" ]]; then
+    if command -v chezmoi >/dev/null 2>&1; then
+        echo "🧩 Syncing dotfiles with chezmoi..."
+        if ! chezmoi update --apply; then
+            echo "⚠️  chezmoi update failed. Continuing with Homebrew maintenance."
+        fi
+    else
+        echo "⚠️  chezmoi not installed, skipping dotfiles sync"
+    fi
+else
+    echo "ℹ️  AUTO_CHEZMOI_UPDATE=0, skipping dotfiles sync"
+fi
 
 if ! command -v brew >/dev/null 2>&1; then
     echo "⚠️  Homebrew not installed, skipping maintenance"

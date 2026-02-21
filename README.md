@@ -86,6 +86,7 @@ This is a lightweight baseline inspired by common NIST/CIS hardening themes for 
 
 ### Automated Maintenance
 Daily automatic tasks (via macOS LaunchAgent):
+- Dotfiles sync (`chezmoi update --apply`)
 - Homebrew update
 - Package upgrades
 - Application (cask) upgrades
@@ -93,6 +94,8 @@ Daily automatic tasks (via macOS LaunchAgent):
 - System diagnostics
 - Cache statistics
 - Scheduled every day at 04:00 + at login
+
+You can disable the automatic dotfiles sync by setting `AUTO_CHEZMOI_UPDATE=0` before running the maintenance script manually.
 
 
 ### Fully Automated Installation
