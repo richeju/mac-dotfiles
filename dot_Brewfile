@@ -4,5 +4,6 @@ cask "dropbox"                # Cloud storage
 cask "nvidia-geforce-now"     # Cloud gaming
 cask "raycast"                # Productivity launcher
 cask "signal"                 # Messaging app
+cask "shottr"                 # Screenshot and annotation tool
 cask "vlc"                    # Media player
 cask "whatsapp"               # Messaging app
