@@ -59,6 +59,7 @@ Interactive prompts for:
 Automatic settings:
 - Default branch: `main`
 - Pull rebase: `false`
+- Automatic pruning of deleted remote branches on fetch: `true`
 - Default editor: `vim`
 
 ### Dock Configuration
