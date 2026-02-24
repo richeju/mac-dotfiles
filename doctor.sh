@@ -142,11 +142,8 @@ run_check_with_optional_fix() {
     local success_message="$2"
     local warn_message="$3"
     local fix_success_message="$4"
-    local check_command_text="$5"
-    local fix_function="$6"
-    shift 6
-
-    : "$check_command_text"
+    local fix_function="$5"
+    shift 5
 
     if "$@"; then
         ok "$success_message"
@@ -286,7 +283,6 @@ if command -v brew >/dev/null 2>&1; then
         "All Homebrew dependencies from ~/.Brewfile are installed" \
         "Some Homebrew dependencies are missing (run: brew bundle --global --verbose)" \
         "Homebrew dependencies fixed successfully" \
-        "brew bundle check --global --quiet" \
         auto_fix_brew_bundle \
         brew bundle check --global --quiet
 fi
@@ -297,7 +293,6 @@ if command -v chezmoi >/dev/null 2>&1; then
         "No pending dotfile changes" \
         "There are pending dotfile changes (run: chezmoi diff / chezmoi apply)" \
         "Pending dotfile changes fixed successfully" \
-        "chezmoi diff --quiet" \
         auto_fix_chezmoi \
         chezmoi diff --quiet
 fi
