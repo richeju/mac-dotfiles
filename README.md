@@ -211,6 +211,21 @@ brew bundle --global --verbose
 - `dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl` - LaunchAgent scheduled at 04:00 + run at login
 - `run_once_enable-maintenance-launchagent-darwin.sh.tmpl` - Loads/enables the LaunchAgent automatically
 
+
+## 🤖 Codex Skill (Automation)
+
+This repository now includes a reusable Codex skill at:
+
+- `skills/mac-dotfiles-automation/SKILL.md`
+
+Use it when you want consistent automation flows for unattended bootstrap, maintenance, and health checks in this repo.
+
+A helper wrapper is also provided:
+
+```bash
+./skills/mac-dotfiles-automation/scripts/auto-bootstrap.sh --git-name "Your Name" --git-email "you@example.com"
+```
+
 ## ℹ️ Notes
 
 - Compatible with **macOS** only (Intel and Apple Silicon)
