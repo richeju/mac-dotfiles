@@ -25,10 +25,15 @@ assert_exit_code() {
 
 run_doctor() {
   local env_dir="$1"
+  local os_type="darwin23"
+  if [[ $# -gt 1 && "${2}" != --* ]]; then
+    os_type="$2"
+    shift
+  fi
   shift
   set +e
   local output
-  output="$(HOME="$env_dir/home" PATH="$env_dir/bin:$PATH" OSTYPE=darwin23 bash "$DOCTOR_SCRIPT" "$@" 2>&1)"
+  output="$(HOME="$env_dir/home" PATH="$env_dir/bin:$PATH" OSTYPE="$os_type" bash "$DOCTOR_SCRIPT" "$@" 2>&1)"
   local status=$?
   set -e
   printf '%s\n__EXIT_STATUS__=%s\n' "$output" "$status"
@@ -156,6 +161,36 @@ test_unknown_argument_returns_error() {
   assert_contains "$output" "Unknown argument: --unknown-flag" "Unknown argument should be reported"
 }
 
+test_non_macos_reports_warning() {
+  local env_dir
+  env_dir="$(setup_env)"
+  write_common_mocks "$env_dir"
+
+  local run_output status output
+  run_output="$(run_doctor "$env_dir" linux-gnu --markdown)"
+  status="$(parse_status "$run_output")"
+  output="$(strip_status_line "$run_output")"
+
+  assert_exit_code "$status" 0 "doctor on non-macOS should still complete when all checks pass"
+  assert_contains "$output" "This repository targets macOS" "non-macOS warning should be visible"
+  assert_contains "$output" '| `platform` | ⚠️ warn | Expected macOS |' "Markdown summary should include platform warning"
+}
+
+test_missing_command_returns_warning_exit_code() {
+  local env_dir
+  env_dir="$(setup_env)"
+  write_common_mocks "$env_dir"
+  rm -f "$env_dir/bin/brew"
+
+  local run_output status output
+  run_output="$(run_doctor "$env_dir")"
+  status="$(parse_status "$run_output")"
+  output="$(strip_status_line "$run_output")"
+
+  assert_exit_code "$status" 1 "doctor should exit with warning when required command is missing"
+  assert_contains "$output" "Missing command: brew" "missing brew command should be reported"
+}
+
 test_fix_mode_runs_autofix() {
   local env_dir
   env_dir="$(setup_env)"
@@ -249,6 +284,8 @@ main() {
   test_fix_mode_runs_autofix
   test_fix_mode_reports_warning_when_fix_fails
   test_unknown_argument_returns_error
+  test_non_macos_reports_warning
+  test_missing_command_returns_warning_exit_code
   echo "[PASS] doctor.sh tests completed"
 }
 
