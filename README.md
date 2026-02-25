@@ -208,6 +208,7 @@ brew bundle --global --verbose
 - `run_onchange_install-packages-darwin.sh.tmpl` - Package installer (runs when Brewfile changes)
 - `run_onchange_update-and-cleanup-darwin.sh.tmpl` - Maintenance script triggered when template changes
 - `dot_local/bin/executable_mac-dotfiles-maintenance.sh.tmpl` - Daily maintenance runner written to `~/.local/bin`
+- `dot_local/bin/executable_mac-dotfiles-brew-maintenance.sh.tmpl` - Shared Homebrew maintenance helper used by scheduled and on-change tasks
 - `dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl` - LaunchAgent scheduled at 04:00 + run at login
 - `run_once_enable-maintenance-launchagent-darwin.sh.tmpl` - Loads/enables the LaunchAgent automatically
 

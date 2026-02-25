@@ -6,6 +6,7 @@ LOG_DIR="$HOME/.local/state/mac-dotfiles"
 LOG_FILE="$LOG_DIR/maintenance.log"
 LOCK_DIR="$LOG_DIR/maintenance.lock"
 AUTO_CHEZMOI_UPDATE="${AUTO_CHEZMOI_UPDATE:-1}"
+BREW_MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-brew-maintenance.sh"
 
 mkdir -p "$LOG_DIR"
 
@@ -37,29 +38,14 @@ else
     echo "ℹ️  AUTO_CHEZMOI_UPDATE=0, skipping dotfiles sync"
 fi
 
-if ! command -v brew >/dev/null 2>&1; then
-    echo "⚠️  Homebrew not installed, skipping maintenance"
-    exit 0
+if [[ ! -f "$BREW_MAINTENANCE_SCRIPT" ]]; then
+    echo "⚠️  Missing helper script: $BREW_MAINTENANCE_SCRIPT"
+    echo "   Run chezmoi apply to install all managed scripts, then retry."
+    exit 1
 fi
 
-echo "📦 Updating Homebrew..."
-brew update
-
-echo "⬆️  Upgrading formulae..."
-brew upgrade
-
-echo "⬆️  Upgrading casks..."
-brew upgrade --cask --greedy
-
-echo "🧹 Cleaning up old versions..."
-brew cleanup -s
-
-echo "🔍 Running diagnostics..."
-if ! brew doctor; then
-    echo "⚠️  brew doctor reported issues. Review the logs."
-fi
-
-echo "📊 Cache statistics:"
-du -sh "$(brew --cache)" 2>/dev/null || echo "Cache empty"
+# shellcheck source=/dev/null
+source "$BREW_MAINTENANCE_SCRIPT"
+run_brew_maintenance
 
 echo "✅ Maintenance completed"

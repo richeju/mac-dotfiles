@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+run_brew_maintenance() {
+    if ! command -v brew >/dev/null 2>&1; then
+        echo "⚠️  Homebrew not installed, skipping"
+        return 0
+    fi
+
+    echo "📦 Updating Homebrew..."
+    brew update
+
+    echo "⬆️  Upgrading formulae..."
+    brew upgrade
+
+    echo "⬆️  Upgrading casks..."
+    brew upgrade --cask --greedy
+
+    echo "🧹 Cleaning up old versions..."
+    brew cleanup -s
+
+    echo "🔍 Running diagnostics..."
+    if ! brew doctor; then
+        echo "⚠️  brew doctor reported issues. Review the logs/output above."
+    fi
+
+    echo "📊 Cache statistics:"
+    du -sh "$(brew --cache)" 2>/dev/null || echo "Cache empty"
+
+    return 0
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    run_brew_maintenance
+fi

@@ -5,36 +5,16 @@ set -euo pipefail
 
 echo "🔄 Starting system maintenance..."
 
-if ! command -v brew &> /dev/null; then
-    echo "⚠️  Homebrew not installed, skipping"
-    exit 0
+BREW_MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-brew-maintenance.sh"
+
+if [[ ! -f "$BREW_MAINTENANCE_SCRIPT" ]]; then
+    echo "⚠️  Missing helper script: $BREW_MAINTENANCE_SCRIPT"
+    echo "   Run chezmoi apply to install all managed scripts, then retry."
+    exit 1
 fi
 
-echo ""
-echo "📦 Updating Homebrew..."
-brew update
+# shellcheck source=/dev/null
+source "$BREW_MAINTENANCE_SCRIPT"
+run_brew_maintenance
 
-echo ""
-echo "⬆️  Upgrading packages..."
-brew upgrade
-
-echo ""
-echo "⬆️  Upgrading casks..."
-brew upgrade --cask --greedy
-
-echo ""
-echo "🧹 Cleaning up old versions..."
-brew cleanup -s
-
-echo ""
-echo "🔍 Running diagnostics..."
-if ! brew doctor; then
-    echo "⚠️  brew doctor reported issues. Review the output above."
-fi
-
-echo ""
-echo "📊 Cache statistics:"
-du -sh "$(brew --cache)" 2>/dev/null || echo "Cache empty"
-
-echo ""
 echo "✅ Maintenance completed successfully!"
