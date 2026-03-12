@@ -1,4 +1,5 @@
 cask "bitwarden"              # Password manager
+cask "codex"                  # AI
 cask "discord"                # Gaming communication
 cask "dropbox"                # Cloud storage
 cask "nvidia-geforce-now"     # Cloud gaming
