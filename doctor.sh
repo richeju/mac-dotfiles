@@ -76,7 +76,7 @@ version_ge() {
 
 check_command() {
     local cmd="$1"
-    if command -v "$cmd" >/dev/null 2>&1; then
+    if command_exists "$cmd"; then
         ok "Command available: $cmd"
         record_check "command:$cmd" "ok" "Command available"
     else
@@ -84,6 +84,11 @@ check_command() {
         record_check "command:$cmd" "warn" "Missing command"
         has_error=1
     fi
+}
+
+command_exists() {
+    local cmd="$1"
+    command -v "$cmd" >/dev/null 2>&1
 }
 
 check_min_version() {
@@ -99,6 +104,21 @@ check_min_version() {
         record_check "version:$name" "warn" "$current < $minimum"
         has_error=1
     fi
+}
+
+check_version_if_available() {
+    local cmd="$1"
+    local name="$2"
+    local minimum="$3"
+    local extractor="$4"
+
+    if ! command_exists "$cmd"; then
+        return
+    fi
+
+    local current
+    current="$($extractor)"
+    check_min_version "$name" "$current" "$minimum"
 }
 
 run_autofix_command() {
@@ -262,22 +282,14 @@ else
     record_check "platform" "warn" "Expected macOS"
 fi
 
-check_command git
-check_command curl
-check_command brew
-check_command chezmoi
+for required_cmd in git curl brew chezmoi; do
+    check_command "$required_cmd"
+done
 
-if command -v git >/dev/null 2>&1; then
-    local_git_version="$(git --version | awk '{print $3}')"
-    check_min_version "git" "$local_git_version" "2.30.0"
-fi
+check_version_if_available git git 2.30.0 "git --version | awk '{print \$3}'"
+check_version_if_available chezmoi chezmoi 2.0.0 "chezmoi --version | awk '{print \$3}' | sed 's/v//'"
 
-if command -v chezmoi >/dev/null 2>&1; then
-    local_chezmoi_version="$(chezmoi --version | awk '{print $3}' | sed 's/v//')"
-    check_min_version "chezmoi" "$local_chezmoi_version" "2.0.0"
-fi
-
-if command -v brew >/dev/null 2>&1; then
+if command_exists brew; then
     run_check_with_optional_fix \
         "brew-bundle" \
         "All Homebrew dependencies from ~/.Brewfile are installed" \
@@ -287,7 +299,7 @@ if command -v brew >/dev/null 2>&1; then
         brew bundle check --global --quiet
 fi
 
-if command -v chezmoi >/dev/null 2>&1; then
+if command_exists chezmoi; then
     run_check_with_optional_fix \
         "chezmoi-diff" \
         "No pending dotfile changes" \
