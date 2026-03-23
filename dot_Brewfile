@@ -1,8 +1,8 @@
 cask "bitwarden"              # Password manager
-cask "codex"                  # AI
 cask "discord"                # Gaming communication
 cask "dropbox"                # Cloud storage
 cask "gh"                     # Github CLI
+cask "node"                   # Node.js
 cask "nvidia-geforce-now"     # Cloud gaming
 cask "raycast"                # Productivity launcher
 cask "signal"                 # Messaging app
