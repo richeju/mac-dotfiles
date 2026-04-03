@@ -73,6 +73,7 @@ NC='\033[0m' # No Color
 log_info() { echo -e "${GREEN}✓${NC} $1"; }
 log_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
 log_error() { echo -e "${RED}✗${NC} $1"; exit 1; }
+DOTFILES_APPLIED="false"
 
 require_command() {
     if ! command -v "$1" &> /dev/null; then
@@ -108,7 +109,7 @@ stop_sudo_keepalive() {
 log_info "Checking sudo access..."
 if ! sudo -n true 2>/dev/null; then
     echo ""
-    echo "${YELLOW}⚠️  This script requires administrator privileges.${NC}"
+    echo -e "${YELLOW}⚠️  This script requires administrator privileges.${NC}"
     echo "You will be prompted for your password to install system packages."
     echo ""
     if ! sudo -v; then
@@ -174,12 +175,17 @@ else
     else
         chezmoi init --apply richeju/mac-dotfiles
     fi
+    DOTFILES_APPLIED="true"
 fi
 
 echo ""
-echo "${GREEN}✨ Setup completed successfully!${NC}"
+echo -e "${GREEN}✨ Setup completed successfully!${NC}"
 echo ""
-echo "Your dotfiles have been applied with chezmoi."
+if [[ "$DOTFILES_APPLIED" == "true" ]]; then
+    echo "Your dotfiles have been applied with chezmoi."
+else
+    echo "Chezmoi is installed and ready. Run 'chezmoi update --apply' to sync and apply your dotfiles."
+fi
 echo ""
 echo "Useful commands:"
 echo "  chezmoi diff     - See what would change"
