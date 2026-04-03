@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+{{- $maintenance := index . "maintenance" | default (dict "hour" 4 "minute" 0) -}}
+{{- $hour := index $maintenance "hour" | default 4 -}}
+{{- $minute := index $maintenance "minute" | default 0 -}}
 <plist version="1.0">
 <dict>
     <key>Label</key>
@@ -17,9 +20,9 @@
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
-        <integer>{{ .maintenance.hour }}</integer>
+        <integer>{{ $hour }}</integer>
         <key>Minute</key>
-        <integer>{{ .maintenance.minute }}</integer>
+        <integer>{{ $minute }}</integer>
     </dict>
 
     <key>StandardOutPath</key>
