@@ -1,17 +1,26 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1083 # chezmoi template placeholders are used below.
+{{- $dock := index . "dock" | default (dict "size" 48 "autohide" true "autohide_delay" 0 "animation_speed" 0.5 "show_recents" false "minimize_effect" "scale" "minimize_to_application" true "show_process_indicators" true) -}}
+{{- $dockSize := index $dock "size" | default 48 -}}
+{{- $dockAutohide := index $dock "autohide" | default true -}}
+{{- $dockAutohideDelay := index $dock "autohide_delay" | default 0 -}}
+{{- $dockAnimationSpeed := index $dock "animation_speed" | default 0.5 -}}
+{{- $dockShowRecents := index $dock "show_recents" | default false -}}
+{{- $dockMinimizeEffect := index $dock "minimize_effect" | default "scale" -}}
+{{- $dockMinimizeToApplication := index $dock "minimize_to_application" | default true -}}
+{{- $dockShowProcessIndicators := index $dock "show_process_indicators" | default true -}}
 set -euo pipefail
 
 echo "Configuring Dock..."
 
-defaults write com.apple.dock tilesize -int {{ .dock.size }}
-defaults write com.apple.dock autohide -bool {{ .dock.autohide }}
-defaults write com.apple.dock autohide-delay -float {{ .dock.autohide_delay }}
-defaults write com.apple.dock autohide-time-modifier -float {{ .dock.animation_speed }}
-defaults write com.apple.dock show-recents -bool {{ .dock.show_recents }}
-defaults write com.apple.dock mineffect -string "{{ .dock.minimize_effect }}"
-defaults write com.apple.dock minimize-to-application -bool {{ .dock.minimize_to_application }}
-defaults write com.apple.dock show-process-indicators -bool {{ .dock.show_process_indicators }}
+defaults write com.apple.dock tilesize -int {{ $dockSize }}
+defaults write com.apple.dock autohide -bool {{ $dockAutohide }}
+defaults write com.apple.dock autohide-delay -float {{ $dockAutohideDelay }}
+defaults write com.apple.dock autohide-time-modifier -float {{ $dockAnimationSpeed }}
+defaults write com.apple.dock show-recents -bool {{ $dockShowRecents }}
+defaults write com.apple.dock mineffect -string "{{ $dockMinimizeEffect }}"
+defaults write com.apple.dock minimize-to-application -bool {{ $dockMinimizeToApplication }}
+defaults write com.apple.dock show-process-indicators -bool {{ $dockShowProcessIndicators }}
 
 killall Dock || true
-echo "✅ Dock configuré (taille {{ .dock.size }}px)"
+echo "✅ Dock configuré (taille {{ $dockSize }}px)"
