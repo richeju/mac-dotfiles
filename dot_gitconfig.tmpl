@@ -1,6 +1,10 @@
+{{- $name := index . "name" | default (env "GIT_NAME") -}}
+{{- $email := index . "email" | default (env "GIT_EMAIL") -}}
+{{- if and $name $email }}
 [user]
-    name = {{ .name }}
-    email = {{ .email }}
+    name = {{ $name | quote }}
+    email = {{ $email | quote }}
+{{- end }}
 
 [init]
     defaultBranch = main
