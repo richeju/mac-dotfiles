@@ -1,0 +1,222 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+STATE_DIR="$HOME/.local/state/mac-dotfiles"
+MAINTENANCE_LOG="$STATE_DIR/maintenance.log"
+LAUNCHD_LOG="$STATE_DIR/launchd.log"
+CHEZMOI_SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
+LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist"
+
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+strip_ansi() {
+    sed -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g'
+}
+
+print_command_value() {
+    local label="$1"
+    shift
+
+    if "$@" >/tmp/mac-dotfiles-report-value.$$ 2>/tmp/mac-dotfiles-report-error.$$; then
+        local value
+        value="$(head -n 1 /tmp/mac-dotfiles-report-value.$$)"
+        if [[ -n "$value" ]]; then
+            printf -- '- %s: `%s`\n' "$label" "$value"
+        else
+            printf -- "- %s: OK\n" "$label"
+        fi
+    else
+        local error
+        error="$(head -n 1 /tmp/mac-dotfiles-report-error.$$)"
+        if [[ -n "$error" ]]; then
+            printf -- "- %s: warning - %s\n" "$label" "$error"
+        else
+            printf -- "- %s: unavailable\n" "$label"
+        fi
+    fi
+
+    rm -f /tmp/mac-dotfiles-report-value.$$ /tmp/mac-dotfiles-report-error.$$
+}
+
+print_section_command() {
+    local heading="$1"
+    shift
+
+    echo
+    echo "## $heading"
+    echo
+    echo '```text'
+    "$@" 2>&1 | strip_ansi || true
+    echo '```'
+}
+
+print_file_tail() {
+    local heading="$1"
+    local file="$2"
+    local lines="${3:-40}"
+
+    echo
+    echo "## $heading"
+    echo
+    if [[ -f "$file" ]]; then
+        echo '```text'
+        tail -n "$lines" "$file"
+        echo '```'
+    else
+        echo "No log file found at \`$file\`."
+    fi
+}
+
+bundle_status() {
+    if ! command_exists brew; then
+        echo "Homebrew is missing."
+        return 1
+    fi
+
+    brew bundle check --global
+}
+
+launch_agent_status() {
+    if [[ -f "$LAUNCH_AGENT" ]]; then
+        echo "plist: installed"
+    else
+        echo "plist: missing"
+    fi
+
+    if command_exists launchctl; then
+        if launchctl print "gui/$(id -u)/com.chezmoi.mac-dotfiles.maintenance" >/dev/null 2>&1; then
+            echo "launchctl: loaded"
+        else
+            echo "launchctl: not loaded"
+        fi
+    else
+        echo "launchctl: unavailable"
+    fi
+}
+
+echo "# mac-dotfiles report"
+echo
+echo "Generated: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+
+echo
+echo "## System"
+echo
+print_command_value "macOS" sw_vers -productVersion
+print_command_value "Build" sw_vers -buildVersion
+print_command_value "Architecture" uname -m
+print_command_value "Host" hostname
+
+echo
+echo "## Tooling"
+echo
+if command_exists brew; then
+    print_command_value "Homebrew" brew --version
+    print_command_value "Homebrew prefix" brew --prefix
+else
+    echo "- Homebrew: missing"
+fi
+
+if command_exists chezmoi; then
+    print_command_value "chezmoi" chezmoi --version
+else
+    echo "- chezmoi: missing"
+fi
+
+if command_exists git; then
+    print_command_value "Git" git --version
+else
+    echo "- Git: missing"
+fi
+
+if command_exists gh; then
+    print_command_value "GitHub CLI" gh --version
+    if gh auth status >/tmp/mac-dotfiles-report-gh-auth.$$ 2>&1; then
+        echo "- GitHub auth: configured"
+    else
+        echo "- GitHub auth: warning"
+    fi
+    rm -f /tmp/mac-dotfiles-report-gh-auth.$$
+else
+    echo "- GitHub CLI: missing"
+fi
+
+if command_exists node; then
+    print_command_value "Node" node --version
+else
+    echo "- Node: missing"
+fi
+
+echo
+echo "## Homebrew"
+echo
+if command_exists brew; then
+    if bundle_status >/tmp/mac-dotfiles-report-bundle.$$ 2>&1; then
+        echo "- Bundle: satisfied"
+    else
+        echo "- Bundle: warning"
+    fi
+    sed 's/^/  /' /tmp/mac-dotfiles-report-bundle.$$
+    rm -f /tmp/mac-dotfiles-report-bundle.$$
+
+    echo
+    echo "### Brewfile Formulae"
+    echo
+    echo '```text'
+    brew bundle list --global --formula 2>/dev/null || true
+    echo '```'
+
+    echo
+    echo "### Brewfile Casks"
+    echo
+    echo '```text'
+    brew bundle list --global --cask 2>/dev/null || true
+    echo '```'
+
+    print_section_command "Outdated Homebrew Items" brew outdated --greedy --verbose
+else
+    echo "Homebrew is not available."
+fi
+
+echo
+echo "## Dotfiles"
+echo
+if command_exists chezmoi; then
+    if [[ -d "$CHEZMOI_SOURCE_DIR" ]]; then
+        echo "- Source: \`$CHEZMOI_SOURCE_DIR\`"
+    else
+        echo "- Source: missing at \`$CHEZMOI_SOURCE_DIR\`"
+    fi
+
+    if [[ -z "$(chezmoi diff 2>/dev/null)" ]]; then
+        echo "- Pending changes: none"
+    else
+        echo "- Pending changes: yes"
+    fi
+else
+    echo "chezmoi is not available."
+fi
+
+echo
+echo "## Maintenance"
+echo
+if [[ -x "$HOME/.local/bin/mac-dotfiles-maintenance.sh" ]]; then
+    echo "- Script: installed"
+else
+    echo "- Script: missing or not executable"
+fi
+launch_agent_status | sed 's/^/- /'
+
+if [[ -x "$CHEZMOI_SOURCE_DIR/doctor.sh" ]]; then
+    print_section_command "Doctor" "$CHEZMOI_SOURCE_DIR/doctor.sh" --markdown
+else
+    echo
+    echo "## Doctor"
+    echo
+    echo "No executable doctor script found at \`$CHEZMOI_SOURCE_DIR/doctor.sh\`."
+fi
+
+print_file_tail "Last Maintenance Log" "$MAINTENANCE_LOG" 60
+print_file_tail "Last LaunchAgent Log" "$LAUNCHD_LOG" 40
