@@ -28,6 +28,11 @@ Verification mode (no changes, no sudo prompt):
 curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash -s -- --verify
 ```
 
+After installation, use the local launcher for day-to-day actions:
+```bash
+mac-dotfiles.sh
+```
+
 ## ✅ Fresh Install and Updates
 
 This repository is designed for both:
@@ -148,6 +153,28 @@ AUTO=1 GIT_NAME="Your Name" GIT_EMAIL="you@example.com" bash install.sh
 
 ### Managing Your Dotfiles
 
+#### Open the launcher
+```bash
+mac-dotfiles.sh
+```
+
+The launcher provides a compact numbered menu for common actions:
+- verify machine readiness
+- safe update with backups
+- update dotfiles
+- generate a machine report
+- run doctor
+- run maintenance
+- show `chezmoi diff`
+
+You can also call commands directly:
+```bash
+mac-dotfiles.sh verify
+mac-dotfiles.sh safe-update
+mac-dotfiles.sh report
+mac-dotfiles.sh doctor
+```
+
 #### Edit configuration files
 ```bash
 chezmoi edit ~/.gitconfig
@@ -237,6 +264,7 @@ brew bundle --global --verbose
 - `dot_gitconfig.tmpl` - Git configuration template
 - `install.sh` - Initial installation script
 - `doctor.sh` - Health check script for dependencies and dotfile status
+- `dot_local/bin/executable_mac-dotfiles.sh.tmpl` - Compact launcher/menu for common workflows
 - `run_once_configure-dock-darwin.sh` - Dock configuration (runs once)
 - `run_once_configure-finder-and-inputs-darwin.sh` - Finder and input comfort defaults (runs once)
 - `run_once_harden-macos-baseline-darwin.sh` - Applies a one-time macOS hardening baseline

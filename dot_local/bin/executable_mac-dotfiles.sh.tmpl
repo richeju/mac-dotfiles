@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+CHEZMOI_SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
+INSTALL_SCRIPT="$CHEZMOI_SOURCE_DIR/install.sh"
+DOCTOR_SCRIPT="$CHEZMOI_SOURCE_DIR/doctor.sh"
+REPORT_SCRIPT="$HOME/.local/bin/mac-dotfiles-report.sh"
+SAFE_UPDATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-safe-update.sh"
+MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-maintenance.sh"
+
+usage() {
+    cat <<'USAGE'
+Usage: mac-dotfiles.sh [command]
+
+Commands:
+  menu          Show the interactive menu
+  verify        Audit machine readiness without changing anything
+  safe-update   Run update with before/after reports and backups
+  update        Run chezmoi update --apply
+  report        Generate a Markdown machine report
+  doctor        Run the repository health check
+  maintenance   Run dotfiles/Homebrew maintenance
+  diff          Show chezmoi diff
+  help          Show this help
+USAGE
+}
+
+run_if_executable() {
+    local path="$1"
+    shift
+
+    if [[ ! -x "$path" ]]; then
+        echo "Missing executable: $path" >&2
+        return 1
+    fi
+
+    "$path" "$@"
+}
+
+run_verify() {
+    run_if_executable "$INSTALL_SCRIPT" --verify
+}
+
+run_safe_update() {
+    run_if_executable "$SAFE_UPDATE_SCRIPT"
+}
+
+run_update() {
+    if ! command -v chezmoi >/dev/null 2>&1; then
+        echo "Missing command: chezmoi" >&2
+        return 1
+    fi
+
+    chezmoi update --apply
+}
+
+run_report() {
+    local target="${1:-$HOME/mac-dotfiles-report.md}"
+    run_if_executable "$REPORT_SCRIPT" > "$target"
+    echo "Report written to $target"
+}
+
+run_doctor() {
+    run_if_executable "$DOCTOR_SCRIPT"
+}
+
+run_maintenance() {
+    run_if_executable "$MAINTENANCE_SCRIPT"
+}
+
+run_diff() {
+    if ! command -v chezmoi >/dev/null 2>&1; then
+        echo "Missing command: chezmoi" >&2
+        return 1
+    fi
+
+    chezmoi diff
+}
+
+show_menu() {
+    cat <<'MENU'
+mac-dotfiles
+============
+
+1. Verify machine readiness
+2. Safe update with backups
+3. Update dotfiles
+4. Generate machine report
+5. Run doctor
+6. Run maintenance
+7. Show chezmoi diff
+0. Exit
+
+MENU
+    printf "Choose an option: "
+}
+
+run_menu() {
+    local choice
+    while true; do
+        show_menu
+        IFS= read -r choice
+        echo
+
+        case "$choice" in
+            1) run_verify ;;
+            2) run_safe_update ;;
+            3) run_update ;;
+            4) run_report ;;
+            5) run_doctor ;;
+            6) run_maintenance ;;
+            7) run_diff ;;
+            0|q|quit|exit) echo "Bye."; return 0 ;;
+            *) echo "Unknown option: $choice" >&2 ;;
+        esac
+
+        echo
+        printf "Press Enter to continue..."
+        IFS= read -r _
+        echo
+    done
+}
+
+command="${1:-menu}"
+shift || true
+
+case "$command" in
+    menu) run_menu ;;
+    verify) run_verify "$@" ;;
+    safe-update) run_safe_update "$@" ;;
+    update) run_update "$@" ;;
+    report) run_report "$@" ;;
+    doctor) run_doctor "$@" ;;
+    maintenance) run_maintenance "$@" ;;
+    diff) run_diff "$@" ;;
+    help|-h|--help) usage ;;
+    *)
+        echo "Unknown command: $command" >&2
+        usage >&2
+        exit 2
+        ;;
+esac
