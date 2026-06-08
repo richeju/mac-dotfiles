@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+STATE_DIR="$HOME/.local/state/mac-dotfiles"
+RUN_ID="$(date '+%Y%m%d-%H%M%S')"
+RUN_DIR="$STATE_DIR/safe-updates/$RUN_ID"
+BACKUP_DIR="$RUN_DIR/backups"
+REPORT_SCRIPT="$HOME/.local/bin/mac-dotfiles-report.sh"
+
+mkdir -p "$BACKUP_DIR"
+
+log() {
+    echo "✓ $1"
+}
+
+warn() {
+    echo "⚠ $1"
+}
+
+require_command() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "✗ Required command '$1' is missing" >&2
+        exit 1
+    fi
+}
+
+backup_path() {
+    local path="$1"
+    local label
+    label="$(echo "$path" | sed "s|^$HOME/||; s|/|__|g")"
+
+    if [[ -e "$path" || -L "$path" ]]; then
+        mkdir -p "$BACKUP_DIR/$(dirname "$label")"
+        cp -a "$path" "$BACKUP_DIR/$label"
+        log "Backed up $path"
+    else
+        warn "Skipped missing path: $path"
+    fi
+}
+
+write_report() {
+    local target="$1"
+
+    if [[ -x "$REPORT_SCRIPT" ]]; then
+        "$REPORT_SCRIPT" > "$target"
+    else
+        {
+            echo "# mac-dotfiles report"
+            echo
+            echo "Report script missing at \`$REPORT_SCRIPT\`."
+        } > "$target"
+    fi
+}
+
+require_command chezmoi
+
+echo "🔒 mac-dotfiles safe update"
+echo "==========================="
+echo "Run directory: $RUN_DIR"
+echo
+
+log "Generating before report"
+write_report "$RUN_DIR/report-before.md"
+
+echo
+echo "📦 Backing up managed local files"
+backup_path "$HOME/.gitconfig"
+backup_path "$HOME/.Brewfile"
+backup_path "$HOME/.zprofile"
+backup_path "$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist"
+
+echo
+echo "🧾 Capturing chezmoi diff"
+if chezmoi diff > "$RUN_DIR/chezmoi.diff"; then
+    log "Diff saved to $RUN_DIR/chezmoi.diff"
+else
+    warn "chezmoi diff returned a warning; saved output to $RUN_DIR/chezmoi.diff"
+fi
+
+echo
+echo "⬆ Applying latest dotfiles"
+chezmoi update --apply
+
+echo
+log "Generating after report"
+write_report "$RUN_DIR/report-after.md"
+
+echo
+echo "✅ Safe update completed"
+echo "Artifacts:"
+echo "  $RUN_DIR/report-before.md"
+echo "  $RUN_DIR/chezmoi.diff"
+echo "  $RUN_DIR/report-after.md"
+echo "  $BACKUP_DIR"

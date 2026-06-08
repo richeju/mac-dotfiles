@@ -191,6 +191,13 @@ When run outside macOS (for example in Linux CI or a dev container), `doctor.sh`
 
 The report is Markdown and includes macOS details, core tool versions, Homebrew bundle status, Brewfile formulae/casks, pending chezmoi changes, GitHub CLI auth status, maintenance LaunchAgent state, doctor output, and recent maintenance logs.
 
+#### Run a safe update
+```bash
+~/.local/bin/mac-dotfiles-safe-update.sh
+```
+
+The safe update command creates a timestamped directory under `~/.local/state/mac-dotfiles/safe-updates/`, writes a before report, backs up key local files, saves `chezmoi diff`, runs `chezmoi update --apply`, then writes an after report. Use it when you want an auditable before/after trail around dotfile changes.
+
 #### Update from repository
 ```bash
 chezmoi update --apply
@@ -238,6 +245,7 @@ brew bundle --global --verbose
 - `dot_local/bin/executable_mac-dotfiles-maintenance.sh.tmpl` - Daily maintenance runner written to `~/.local/bin`
 - `dot_local/bin/executable_mac-dotfiles-brew-maintenance.sh.tmpl` - Shared Homebrew maintenance helper used by scheduled and on-change tasks
 - `dot_local/bin/executable_mac-dotfiles-report.sh.tmpl` - Markdown machine report generator written to `~/.local/bin`
+- `dot_local/bin/executable_mac-dotfiles-safe-update.sh.tmpl` - Safe update wrapper with before/after reports, backups, and saved diff
 - `dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl` - LaunchAgent scheduled at 04:00 + run at login
 - `run_once_enable-maintenance-launchagent-darwin.sh.tmpl` - Loads/enables the LaunchAgent automatically
 
