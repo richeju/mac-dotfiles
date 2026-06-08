@@ -297,7 +297,9 @@ echo ""
 
 if [ -d "$HOME/.local/share/chezmoi" ]; then
     log_warning "Chezmoi already initialized"
-    log_info "Run 'chezmoi update' to sync your dotfiles"
+    log_info "Syncing and applying existing dotfiles..."
+    chezmoi update --apply
+    DOTFILES_APPLIED="true"
 else
     log_info "Initializing chezmoi with your dotfiles..."
     if [[ "$AUTO_MODE" == "true" ]]; then

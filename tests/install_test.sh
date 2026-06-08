@@ -85,6 +85,11 @@ case "$1" in
     ;;
   diff)
     ;;
+  update)
+    if [[ "${2:-}" == "--apply" ]]; then
+      echo "chezmoi-update-apply-called"
+    fi
+    ;;
 esac
 exit 0
 CHEZ
@@ -152,9 +157,32 @@ test_verify_reports_missing_homebrew() {
   assert_not_contains "$output" "Checking sudo access" "verify must not request sudo when checks fail"
 }
 
+test_existing_chezmoi_runs_update_apply() {
+  local env_dir run_output status output
+  env_dir="$(setup_env)"
+  write_common_mocks "$env_dir"
+
+  cat > "$env_dir/bin/sudo" <<'SUDO'
+#!/usr/bin/env bash
+exit 0
+SUDO
+  chmod +x "$env_dir/bin/sudo"
+
+  run_output="$(run_install "$env_dir")"
+  status="$(parse_status "$run_output")"
+  output="$(strip_status_line "$run_output")"
+
+  assert_exit_code "$status" 0 "install should succeed when chezmoi is already initialized"
+  assert_contains "$output" "Chezmoi already initialized" "existing chezmoi state should be detected"
+  assert_contains "$output" "Syncing and applying existing dotfiles" "install should self-heal existing dotfiles"
+  assert_contains "$output" "chezmoi-update-apply-called" "install should run chezmoi update --apply"
+  assert_contains "$output" "Your dotfiles have been applied with chezmoi." "install should report applied state"
+}
+
 main() {
   test_verify_happy_path
   test_verify_reports_missing_homebrew
+  test_existing_chezmoi_runs_update_apply
   echo "[PASS] install.sh tests completed"
 }
 
