@@ -87,6 +87,10 @@ case "$1" in
     ;;
   update)
     if [[ "${2:-}" == "--apply" && "${3:-}" == "--force" && "${4:-}" == "--no-tty" ]]; then
+      if IFS= read -r -t 0.1 _stdin_line; then
+        echo "chezmoi-update-read-stdin"
+        exit 3
+      fi
       echo "chezmoi-update-apply-called"
     fi
     ;;
@@ -111,7 +115,7 @@ run_install() {
   shift
   set +e
   local output
-  output="$(HOME="$env_dir/home" PATH="$env_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin" OSTYPE=darwin23 MAC_DOTFILES_SKIP_BREW_PATH_DETECTION=1 bash "$INSTALL_SCRIPT" "$@" 2>&1)"
+  output="$(printf 'stdin-sentinel-from-pipe\n' | HOME="$env_dir/home" PATH="$env_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin" OSTYPE=darwin23 MAC_DOTFILES_SKIP_BREW_PATH_DETECTION=1 bash "$INSTALL_SCRIPT" "$@" 2>&1)"
   local status=$?
   set -e
   printf '%s\n__EXIT_STATUS__=%s\n' "$output" "$status"
@@ -176,6 +180,7 @@ SUDO
   assert_contains "$output" "Chezmoi already initialized" "existing chezmoi state should be detected"
   assert_contains "$output" "Syncing and applying existing dotfiles" "install should self-heal existing dotfiles"
   assert_contains "$output" "chezmoi-update-apply-called" "install should run forced non-interactive chezmoi update --apply"
+  assert_not_contains "$output" "chezmoi-update-read-stdin" "install should not let chezmoi consume script stdin"
   assert_contains "$output" "Your dotfiles have been applied with chezmoi." "install should report applied state"
   assert_contains "$output" "mac-dotfiles.sh   - Optional local launcher" "install should mention launcher as optional"
   assert_not_contains "$output" "mac-dotfiles\n============" "install should not open the interactive launcher"

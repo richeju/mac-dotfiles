@@ -298,16 +298,17 @@ echo ""
 if [ -d "$HOME/.local/share/chezmoi" ]; then
     log_warning "Chezmoi already initialized"
     log_info "Syncing and applying existing dotfiles..."
-    chezmoi update --apply --force --no-tty
+    chezmoi update --apply --force --no-tty </dev/null
     DOTFILES_APPLIED="true"
 else
     log_info "Initializing chezmoi with your dotfiles..."
     if [[ "$AUTO_MODE" == "true" ]]; then
         log_info "Running in auto mode (non-interactive)"
         chezmoi init --apply --promptBool=false --promptInt=false --promptString=false \
-            --data "name=$GIT_NAME" --data "email=$GIT_EMAIL" richeju/mac-dotfiles
+            --data "name=$GIT_NAME" --data "email=$GIT_EMAIL" richeju/mac-dotfiles </dev/null
     else
-        chezmoi init --apply richeju/mac-dotfiles
+        chezmoi init --apply --promptBool=false --promptInt=false --promptString=false \
+            richeju/mac-dotfiles </dev/null
     fi
     DOTFILES_APPLIED="true"
 fi
