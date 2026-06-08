@@ -7,6 +7,10 @@
 
 ## Profile mappings
 
+### launcher
+1. `mac-dotfiles.sh`
+2. For non-interactive runs, use direct launcher commands such as `mac-dotfiles.sh verify`, `mac-dotfiles.sh safe-update`, `mac-dotfiles.sh report`, or `mac-dotfiles.sh doctor`
+
 ### bootstrap
 1. `./install.sh --auto --git-name "<NAME>" --git-email "<EMAIL>"`
 2. `./doctor.sh`

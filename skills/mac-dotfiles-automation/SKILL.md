@@ -11,6 +11,7 @@ Use this skill when the user asks to:
 - run unattended package/dotfiles updates,
 - schedule or verify maintenance,
 - run repository health checks,
+- use the compact `mac-dotfiles.sh` launcher,
 - generate a machine report,
 - run a safe update with before/after artifacts.
 
@@ -25,6 +26,7 @@ Use this skill when the user asks to:
    - Use `scripts/auto-bootstrap.sh` for a ready-to-run wrapper.
 
 3. **Apply dotfiles and packages**
+   - For interactive local use, prefer the compact launcher: `mac-dotfiles.sh`.
    - Apply latest state with `chezmoi update --apply`.
    - Ensure packages are reconciled with `brew bundle --global --verbose`.
    - For an auditable update, prefer `~/.local/bin/mac-dotfiles-safe-update.sh` when available.

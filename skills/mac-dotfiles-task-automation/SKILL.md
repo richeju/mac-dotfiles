@@ -7,13 +7,32 @@ description: Use this skill when the user asks to automate repetitive repository
 
 ## Quick workflow
 1. Validate repository context and required commands.
-2. Choose an automation profile (`bootstrap`, `update`, `safe-update`, `verify`, `report`, or `maintenance`).
+2. Choose an automation profile (`launcher`, `bootstrap`, `update`, `safe-update`, `verify`, `report`, or `maintenance`).
 3. Run the matching command chain directly or via `scripts/repo-automation.sh`.
 4. Report executed commands, exit status, and any manual follow-up.
 
 ## Automation profiles
 
-### 1) Bootstrap profile
+### 1) Launcher profile
+Use for interactive local operation after installation.
+
+Run:
+```bash
+mac-dotfiles.sh
+```
+
+This provides a numbered menu for:
+- verify
+- safe update
+- update
+- report
+- doctor
+- maintenance
+- diff
+
+Direct commands are also available, such as `mac-dotfiles.sh verify`, `mac-dotfiles.sh safe-update`, and `mac-dotfiles.sh report`.
+
+### 2) Bootstrap profile
 Use for first-time setup on a machine.
 
 Run:
@@ -25,7 +44,7 @@ This runs:
 - `./install.sh --auto --git-name ... --git-email ...`
 - `./doctor.sh`
 
-### 2) Update profile
+### 3) Update profile
 Use for regular synchronization and package reconciliation.
 
 Run:
@@ -38,7 +57,7 @@ This runs:
 - `brew bundle --global --verbose`
 - `./doctor.sh`
 
-### 3) Safe update profile
+### 4) Safe update profile
 Use when changes should leave an auditable before/after trail.
 
 Run:
@@ -52,7 +71,7 @@ This writes timestamped artifacts under `~/.local/state/mac-dotfiles/safe-update
 - `report-after.md`
 - backups of key local files
 
-### 4) Verify profile
+### 5) Verify profile
 Use for quick health validation in local checks or CI-like flows.
 
 Run:
@@ -65,7 +84,7 @@ This runs:
 - `./doctor.sh`
 - repository tests such as `./tests/doctor_test.sh`, `./tests/install_test.sh`, `./tests/report_test.sh`, and `./tests/safe_update_test.sh` when executable
 
-### 5) Report profile
+### 6) Report profile
 Use to capture a Markdown snapshot of the machine.
 
 Run:
@@ -75,7 +94,7 @@ Run:
 
 This includes system details, tool versions, Homebrew bundle status, GitHub CLI auth, chezmoi state, maintenance state, doctor output, and recent logs.
 
-### 6) Maintenance profile
+### 7) Maintenance profile
 Use for periodic cleanup and validation.
 
 Run:
