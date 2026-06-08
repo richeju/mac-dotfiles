@@ -112,6 +112,14 @@ ensure_brew_in_path() {
     fi
 }
 
+ensure_zprofile_line() {
+    local line="$1"
+
+    if [[ ! -f "$HOME/.zprofile" ]] || ! grep -Fqx "$line" "$HOME/.zprofile"; then
+        echo "$line" >> "$HOME/.zprofile"
+    fi
+}
+
 run_verify() {
     echo "🔎 macOS Bootstrap Verification"
     echo "==============================="
@@ -260,15 +268,17 @@ if ! command -v brew &> /dev/null; then
     if [[ $(uname -m) == 'arm64' ]]; then
         # shellcheck disable=SC2016 # We intentionally persist this exact command string into .zprofile.
         BREW_SHELLENV_LINE='eval "$(/opt/homebrew/bin/brew shellenv)"'
-        if [[ ! -f "$HOME/.zprofile" ]] || ! grep -Fqx "$BREW_SHELLENV_LINE" "$HOME/.zprofile"; then
-            echo "$BREW_SHELLENV_LINE" >> "$HOME/.zprofile"
-        fi
+        ensure_zprofile_line "$BREW_SHELLENV_LINE"
         eval "$(/opt/homebrew/bin/brew shellenv)"
     fi
 else
     ensure_brew_in_path
     log_info "Homebrew already installed"
 fi
+
+# Make chezmoi-managed helper scripts available in new shells.
+# shellcheck disable=SC2016 # We intentionally persist this exact command string into .zprofile.
+ensure_zprofile_line 'export PATH="$HOME/.local/bin:$PATH"'
 
 # Install chezmoi via Homebrew
 log_info "Installing chezmoi..."

@@ -33,6 +33,8 @@ After installation, use the local launcher for day-to-day actions:
 mac-dotfiles.sh
 ```
 
+The installer adds `~/.local/bin` to your shell `PATH` so managed helper commands such as `mac-dotfiles.sh` are available in new terminal sessions.
+
 ## ✅ Fresh Install and Updates
 
 This repository is designed for both:
@@ -262,6 +264,7 @@ brew bundle --global --verbose
 - `Brewfile` - Bootstrap/development packages tracked in the repo
 - `dot_Brewfile` - Rendered to `~/.Brewfile`, used by `brew bundle --global`
 - `dot_gitconfig.tmpl` - Git configuration template
+- `dot_zprofile` - Shell profile that enables Homebrew and `~/.local/bin`
 - `install.sh` - Initial installation script
 - `doctor.sh` - Health check script for dependencies and dotfile status
 - `dot_local/bin/executable_mac-dotfiles.sh.tmpl` - Compact launcher/menu for common workflows
