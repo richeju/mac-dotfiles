@@ -9,7 +9,7 @@
 
 ### launcher
 1. `mac-dotfiles.sh`
-2. For non-interactive runs, use direct launcher commands such as `mac-dotfiles.sh verify`, `mac-dotfiles.sh safe-update`, `mac-dotfiles.sh report`, or `mac-dotfiles.sh doctor`
+2. For non-interactive runs, use direct launcher commands such as `mac-dotfiles.sh verify`, `mac-dotfiles.sh safe-update`, `mac-dotfiles.sh report`, `mac-dotfiles.sh doctor`, or `mac-dotfiles.sh explain`
 
 ### bootstrap
 1. `./install.sh --auto --git-name "<NAME>" --git-email "<EMAIL>"`
@@ -27,10 +27,11 @@
 ### verify
 1. `./install.sh --verify`
 2. `./doctor.sh`
-3. `./tests/install_test.sh` (run only when executable)
-4. `./tests/doctor_test.sh` (run only when executable)
-5. `./tests/report_test.sh` (run only when executable)
-6. `./tests/safe_update_test.sh` (run only when executable)
+3. `./doctor.sh --explain` (when warnings need guidance)
+4. `./tests/install_test.sh` (run only when executable)
+5. `./tests/doctor_test.sh` (run only when executable)
+6. `./tests/report_test.sh` (run only when executable)
+7. `./tests/safe_update_test.sh` (run only when executable)
 
 ### report
 1. `~/.local/bin/mac-dotfiles-report.sh > ~/mac-dotfiles-report.md`

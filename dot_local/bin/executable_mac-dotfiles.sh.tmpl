@@ -20,6 +20,7 @@ Commands:
   update        Run chezmoi update --apply
   report        Generate a Markdown machine report
   doctor        Run the repository health check
+  explain       Explain doctor warnings and suggested fixes
   maintenance   Run dotfiles/Homebrew maintenance
   diff          Show chezmoi diff
   help          Show this help
@@ -65,6 +66,10 @@ run_doctor() {
     run_if_executable "$DOCTOR_SCRIPT"
 }
 
+run_explain() {
+    run_if_executable "$DOCTOR_SCRIPT" --explain
+}
+
 run_maintenance() {
     run_if_executable "$MAINTENANCE_SCRIPT"
 }
@@ -88,8 +93,9 @@ mac-dotfiles
 3. Update dotfiles
 4. Generate machine report
 5. Run doctor
-6. Run maintenance
-7. Show chezmoi diff
+6. Explain doctor warnings
+7. Run maintenance
+8. Show chezmoi diff
 0. Exit
 
 MENU
@@ -109,8 +115,9 @@ run_menu() {
             3) run_update ;;
             4) run_report ;;
             5) run_doctor ;;
-            6) run_maintenance ;;
-            7) run_diff ;;
+            6) run_explain ;;
+            7) run_maintenance ;;
+            8) run_diff ;;
             0|q|quit|exit) echo "Bye."; return 0 ;;
             *) echo "Unknown option: $choice" >&2 ;;
         esac
@@ -132,6 +139,7 @@ case "$command" in
     update) run_update "$@" ;;
     report) run_report "$@" ;;
     doctor) run_doctor "$@" ;;
+    explain) run_explain "$@" ;;
     maintenance) run_maintenance "$@" ;;
     diff) run_diff "$@" ;;
     help|-h|--help) usage ;;

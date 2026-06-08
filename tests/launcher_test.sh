@@ -30,7 +30,11 @@ INSTALL
 
   cat > "$env_dir/home/.local/share/chezmoi/doctor.sh" <<'DOCTOR'
 #!/usr/bin/env bash
-echo "doctor-called"
+if [[ "${1:-}" == "--explain" ]]; then
+  echo "explain-called"
+else
+  echo "doctor-called"
+fi
 DOCTOR
 
   cat > "$env_dir/home/.local/bin/mac-dotfiles-report.sh" <<'REPORT'
@@ -93,6 +97,9 @@ test_direct_commands() {
 
   output="$(run_launcher "$env_dir" update)"
   assert_contains "$output" "update-called" "update command should call chezmoi update"
+
+  output="$(run_launcher "$env_dir" explain)"
+  assert_contains "$output" "explain-called" "explain command should call doctor --explain"
 
   report_path="$env_dir/home/report.md"
   output="$(run_launcher "$env_dir" report "$report_path")"

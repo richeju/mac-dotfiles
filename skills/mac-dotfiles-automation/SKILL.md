@@ -11,6 +11,7 @@ Use this skill when the user asks to:
 - run unattended package/dotfiles updates,
 - schedule or verify maintenance,
 - run repository health checks,
+- explain diagnostic warnings,
 - use the compact `mac-dotfiles.sh` launcher,
 - generate a machine report,
 - run a safe update with before/after artifacts.
@@ -35,6 +36,7 @@ Use this skill when the user asks to:
    - Run `~/.local/bin/mac-dotfiles-maintenance.sh` when available.
    - Generate a Markdown machine report with `~/.local/bin/mac-dotfiles-report.sh` when available.
    - Run `./doctor.sh` (or `./doctor.sh --json` in CI-like flows).
+   - Use `./doctor.sh --explain` or `mac-dotfiles.sh explain` when warnings need actionable guidance.
 
 5. **Troubleshoot quickly**
    - If Homebrew is missing, re-run bootstrap script.

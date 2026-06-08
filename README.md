@@ -175,6 +175,7 @@ mac-dotfiles.sh verify
 mac-dotfiles.sh safe-update
 mac-dotfiles.sh report
 mac-dotfiles.sh doctor
+mac-dotfiles.sh explain
 ```
 
 #### Edit configuration files
@@ -207,6 +208,7 @@ Optional modes:
 ./doctor.sh --fix   # attempt safe auto-fixes (brew bundle + chezmoi apply)
 ./doctor.sh --json  # emit a JSON summary report
 ./doctor.sh --markdown  # emit a Markdown report (for issue/PR copy-paste)
+./doctor.sh --explain  # explain warnings and suggest next commands
 ```
 
 The doctor script validates core dependencies (`git`, `curl`, `brew`, `chezmoi`), checks minimum versions for `git` and `chezmoi`, verifies Homebrew bundle status, confirms whether there are pending chezmoi changes, and detects broken symlinks for key managed files.

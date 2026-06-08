@@ -147,6 +147,53 @@ test_happy_path_markdown() {
   assert_contains "$output" '| `platform` | ✅ ok | Running on macOS |' "Markdown summary should include platform check"
 }
 
+test_explain_happy_path() {
+  local env_dir
+  env_dir="$(setup_env)"
+  write_common_mocks "$env_dir"
+
+  local run_output status output
+  run_output="$(run_doctor "$env_dir" --explain)"
+  status="$(parse_status "$run_output")"
+  output="$(strip_status_line "$run_output")"
+
+  assert_exit_code "$status" 0 "doctor --explain happy path should exit successfully"
+  assert_contains "$output" "## Explanation" "doctor --explain should print explanation section"
+  assert_contains "$output" "No warnings to explain." "doctor --explain should say when no warnings exist"
+}
+
+test_explain_warning_path() {
+  local env_dir
+  env_dir="$(setup_env)"
+  write_common_mocks "$env_dir"
+
+  cat > "$env_dir/bin/chezmoi" <<'CHEZ'
+#!/usr/bin/env bash
+if [[ "$1" == "--version" ]]; then
+  echo "chezmoi version v2.55.0"
+  exit 0
+fi
+if [[ "$1" == "diff" ]]; then
+  echo pending change
+  exit 0
+fi
+if [[ "$1" == "apply" ]]; then
+  exit 0
+fi
+exit 0
+CHEZ
+  chmod +x "$env_dir/bin/chezmoi"
+
+  local run_output status output
+  run_output="$(run_doctor "$env_dir" --explain)"
+  status="$(parse_status "$run_output")"
+  output="$(strip_status_line "$run_output")"
+
+  assert_exit_code "$status" 1 "doctor --explain should preserve warning exit code"
+  assert_contains "$output" "### chezmoi-diff" "doctor --explain should include warning check name"
+  assert_contains "$output" "mac-dotfiles.sh safe-update" "doctor --explain should suggest safe update"
+}
+
 test_unknown_argument_returns_error() {
   local env_dir
   env_dir="$(setup_env)"
@@ -282,6 +329,8 @@ main() {
   test_help
   test_happy_path_json
   test_happy_path_markdown
+  test_explain_happy_path
+  test_explain_warning_path
   test_fix_mode_runs_autofix
   test_fix_mode_reports_warning_when_fix_fails
   test_unknown_argument_returns_error

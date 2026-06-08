@@ -15,12 +15,13 @@ error() { echo -e "${RED}✗${NC} $1"; }
 
 usage() {
     cat <<'USAGE'
-Usage: ./doctor.sh [--fix] [--json] [--markdown] [--help]
+Usage: ./doctor.sh [--fix] [--json] [--markdown] [--explain] [--help]
 
 Options:
   --fix    Attempt safe automatic fixes when possible.
   --json   Print a machine-readable JSON summary at the end.
   --markdown  Print a Markdown summary table (useful for issues/PRs).
+  --explain  Explain warnings and suggest next commands.
   --help   Show this help.
 USAGE
 }
@@ -28,6 +29,7 @@ USAGE
 FIX_MODE=0
 JSON_MODE=0
 MARKDOWN_MODE=0
+EXPLAIN_MODE=0
 
 while (($#)); do
     case "$1" in
@@ -39,6 +41,9 @@ while (($#)); do
             ;;
         --markdown)
             MARKDOWN_MODE=1
+            ;;
+        --explain)
+            EXPLAIN_MODE=1
             ;;
         --help|-h)
             usage
@@ -271,6 +276,141 @@ print_markdown_summary() {
     done
 }
 
+print_explanation_for_check() {
+    local name="$1"
+    local status="$2"
+    local message="$3"
+
+    [[ "$status" == "warn" ]] || return 0
+
+    echo "### $name"
+    echo
+    echo "Status: $message"
+    echo
+
+    case "$name" in
+        platform)
+            cat <<'TEXT'
+Meaning:
+  These dotfiles are designed for macOS. Some defaults, LaunchAgents, and Homebrew paths may not apply elsewhere.
+
+Try:
+  Run this repository on macOS for full validation.
+TEXT
+            ;;
+        command:brew)
+            cat <<'TEXT'
+Meaning:
+  Homebrew is required to install and reconcile packages.
+
+Try:
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash
+TEXT
+            ;;
+        command:chezmoi)
+            cat <<'TEXT'
+Meaning:
+  chezmoi is required to apply and update these dotfiles.
+
+Try:
+  brew install chezmoi
+  chezmoi init --apply richeju/mac-dotfiles
+TEXT
+            ;;
+        command:git|command:curl)
+            cat <<TEXT
+Meaning:
+  $name is required by the bootstrap and update workflow.
+
+Try:
+  xcode-select --install
+  brew bundle --global --verbose
+TEXT
+            ;;
+        version:git|version:chezmoi)
+            cat <<'TEXT'
+Meaning:
+  The installed tool version is older than the supported baseline.
+
+Try:
+  brew upgrade git chezmoi
+TEXT
+            ;;
+        brew-bundle)
+            cat <<'TEXT'
+Meaning:
+  Homebrew packages from ~/.Brewfile are missing or outdated.
+
+Try:
+  brew bundle --global --verbose
+
+Safer option:
+  mac-dotfiles.sh safe-update
+TEXT
+            ;;
+        chezmoi-diff)
+            cat <<'TEXT'
+Meaning:
+  Managed files in your home directory differ from the source state.
+
+Try:
+  chezmoi diff
+  chezmoi apply
+
+Safer option:
+  mac-dotfiles.sh safe-update
+TEXT
+            ;;
+        symlink:*)
+            cat <<'TEXT'
+Meaning:
+  A managed symlink points to a missing target.
+
+Try:
+  chezmoi apply
+
+Safer option:
+  mac-dotfiles.sh safe-update
+TEXT
+            ;;
+        *)
+            cat <<'TEXT'
+Meaning:
+  This check needs attention.
+
+Try:
+  mac-dotfiles.sh report
+  mac-dotfiles.sh safe-update
+TEXT
+            ;;
+    esac
+
+    echo
+}
+
+print_explanations() {
+    echo "## Explanation"
+    echo
+
+    local printed=0
+    local i
+    for i in "${!CHECK_NAMES[@]}"; do
+        if [[ "${CHECK_STATUS[$i]}" == "warn" ]]; then
+            print_explanation_for_check \
+                "${CHECK_NAMES[$i]}" \
+                "${CHECK_STATUS[$i]}" \
+                "${CHECK_MESSAGE[$i]}"
+            printed=1
+        fi
+    done
+
+    if [[ "$printed" -eq 0 ]]; then
+        echo "No warnings to explain."
+        echo
+    fi
+}
+
 echo "🩺 mac-dotfiles doctor"
 echo "======================="
 
@@ -325,6 +465,11 @@ fi
 if [[ "$MARKDOWN_MODE" -eq 1 ]]; then
     echo
     print_markdown_summary
+fi
+
+if [[ "$EXPLAIN_MODE" -eq 1 ]]; then
+    echo
+    print_explanations
 fi
 
 if [[ "$has_error" -eq 0 ]]; then

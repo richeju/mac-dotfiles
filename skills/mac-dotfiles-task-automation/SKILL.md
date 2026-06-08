@@ -27,10 +27,11 @@ This provides a numbered menu for:
 - update
 - report
 - doctor
+- explain
 - maintenance
 - diff
 
-Direct commands are also available, such as `mac-dotfiles.sh verify`, `mac-dotfiles.sh safe-update`, and `mac-dotfiles.sh report`.
+Direct commands are also available, such as `mac-dotfiles.sh verify`, `mac-dotfiles.sh safe-update`, `mac-dotfiles.sh report`, and `mac-dotfiles.sh explain`.
 
 ### 2) Bootstrap profile
 Use for first-time setup on a machine.
@@ -82,6 +83,7 @@ bash scripts/repo-automation.sh verify
 This runs:
 - `./install.sh --verify` (when checking machine readiness)
 - `./doctor.sh`
+- `./doctor.sh --explain` when warnings need actionable guidance
 - repository tests such as `./tests/doctor_test.sh`, `./tests/install_test.sh`, `./tests/report_test.sh`, and `./tests/safe_update_test.sh` when executable
 
 ### 6) Report profile
