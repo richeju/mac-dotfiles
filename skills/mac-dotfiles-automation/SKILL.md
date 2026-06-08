@@ -10,7 +10,9 @@ Use this skill when the user asks to:
 - automate initial setup of a new Mac,
 - run unattended package/dotfiles updates,
 - schedule or verify maintenance,
-- run repository health checks.
+- run repository health checks,
+- generate a machine report,
+- run a safe update with before/after artifacts.
 
 ## Workflow
 1. **Validate platform and tools**
@@ -19,14 +21,17 @@ Use this skill when the user asks to:
 
 2. **Automated bootstrap**
    - For unattended install, run `install.sh --auto --git-name ... --git-email ...`.
+   - For a no-change readiness audit, run `install.sh --verify`.
    - Use `scripts/auto-bootstrap.sh` for a ready-to-run wrapper.
 
 3. **Apply dotfiles and packages**
    - Apply latest state with `chezmoi update --apply`.
    - Ensure packages are reconciled with `brew bundle --global --verbose`.
+   - For an auditable update, prefer `~/.local/bin/mac-dotfiles-safe-update.sh` when available.
 
 4. **Run maintenance and validation**
    - Run `~/.local/bin/mac-dotfiles-maintenance.sh` when available.
+   - Generate a Markdown machine report with `~/.local/bin/mac-dotfiles-report.sh` when available.
    - Run `./doctor.sh` (or `./doctor.sh --json` in CI-like flows).
 
 5. **Troubleshoot quickly**
@@ -38,4 +43,5 @@ Use this skill when the user asks to:
 - Commands executed
 - Whether bootstrap succeeded
 - Whether doctor checks passed
+- Where reports/backups were written, if generated
 - Next manual step only if a hard blocker exists (e.g., macOS-only setting on Linux)

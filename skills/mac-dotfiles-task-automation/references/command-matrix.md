@@ -3,7 +3,7 @@
 ## Preflight checklist
 - Run from repository root.
 - Ensure `bash`, `git`, and `curl` are present.
-- For `update` and `maintenance`, expect `chezmoi` and Homebrew (`brew`) to be installed.
+- For `update`, `safe-update`, `report`, and `maintenance`, expect `chezmoi` and Homebrew (`brew`) to be installed.
 
 ## Profile mappings
 
@@ -16,9 +16,21 @@
 2. `brew bundle --global --verbose`
 3. `./doctor.sh`
 
+### safe-update
+1. `~/.local/bin/mac-dotfiles-safe-update.sh`
+2. Report the timestamped artifact directory under `~/.local/state/mac-dotfiles/safe-updates/`
+
 ### verify
-1. `./doctor.sh`
-2. `./tests/doctor_test.sh` (run only when executable)
+1. `./install.sh --verify`
+2. `./doctor.sh`
+3. `./tests/install_test.sh` (run only when executable)
+4. `./tests/doctor_test.sh` (run only when executable)
+5. `./tests/report_test.sh` (run only when executable)
+6. `./tests/safe_update_test.sh` (run only when executable)
+
+### report
+1. `~/.local/bin/mac-dotfiles-report.sh > ~/mac-dotfiles-report.md`
+2. Report the generated Markdown path
 
 ### maintenance
 1. `~/.local/bin/mac-dotfiles-maintenance.sh` (run only when present and executable)
@@ -28,5 +40,6 @@
 After execution, report:
 - selected profile,
 - commands attempted in order,
+- generated report/backup paths,
 - first failure (if any),
 - final status (`success` or `failed`).
