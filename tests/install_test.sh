@@ -86,7 +86,7 @@ case "$1" in
   diff)
     ;;
   update)
-    if [[ "${2:-}" == "--apply" ]]; then
+    if [[ "${2:-}" == "--apply" && "${3:-}" == "--force" && "${4:-}" == "--no-tty" ]]; then
       echo "chezmoi-update-apply-called"
     fi
     ;;
@@ -175,7 +175,7 @@ SUDO
   assert_exit_code "$status" 0 "install should succeed when chezmoi is already initialized"
   assert_contains "$output" "Chezmoi already initialized" "existing chezmoi state should be detected"
   assert_contains "$output" "Syncing and applying existing dotfiles" "install should self-heal existing dotfiles"
-  assert_contains "$output" "chezmoi-update-apply-called" "install should run chezmoi update --apply"
+  assert_contains "$output" "chezmoi-update-apply-called" "install should run forced non-interactive chezmoi update --apply"
   assert_contains "$output" "Your dotfiles have been applied with chezmoi." "install should report applied state"
 }
 

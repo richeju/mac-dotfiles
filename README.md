@@ -40,6 +40,7 @@ The installer adds `~/.local/bin` to your shell `PATH` so managed helper command
 This repository is designed for both:
 
 - A fresh macOS install: `install.sh` installs Homebrew and chezmoi, applies the dotfiles, renders `~/.Brewfile`, then installs the required packages with `brew bundle --global --verbose`.
+- Existing installs: rerunning `install.sh` reconciles managed files with `chezmoi update --apply --force --no-tty`, so missing managed helpers are restored without prompts.
 - Ongoing updates: the managed maintenance scripts run `chezmoi update --apply`, `brew update`, `brew upgrade`, `brew upgrade --cask --greedy`, cleanup, and diagnostics.
 - Readiness checks: `install.sh --verify` audits Homebrew, chezmoi, `~/.Brewfile`, package status, GitHub CLI/auth, and maintenance files without changing the machine.
 

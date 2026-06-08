@@ -298,7 +298,7 @@ echo ""
 if [ -d "$HOME/.local/share/chezmoi" ]; then
     log_warning "Chezmoi already initialized"
     log_info "Syncing and applying existing dotfiles..."
-    chezmoi update --apply
+    chezmoi update --apply --force --no-tty
     DOTFILES_APPLIED="true"
 else
     log_info "Initializing chezmoi with your dotfiles..."
