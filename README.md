@@ -23,12 +23,18 @@ Zero-interaction mode (for full automation):
 curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash -s -- --auto --git-name "Your Name" --git-email "you@example.com"
 ```
 
+Verification mode (no changes, no sudo prompt):
+```bash
+curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash -s -- --verify
+```
+
 ## ✅ Fresh Install and Updates
 
 This repository is designed for both:
 
 - A fresh macOS install: `install.sh` installs Homebrew and chezmoi, applies the dotfiles, renders `~/.Brewfile`, then installs the required packages with `brew bundle --global --verbose`.
 - Ongoing updates: the managed maintenance scripts run `chezmoi update --apply`, `brew update`, `brew upgrade`, `brew upgrade --cask --greedy`, cleanup, and diagnostics.
+- Readiness checks: `install.sh --verify` audits Homebrew, chezmoi, `~/.Brewfile`, package status, GitHub CLI/auth, and maintenance files without changing the machine.
 
 Some macOS apps can still require manual approval or an administrator password during cask upgrades. For example, Dropbox may ask for Privacy & Security approval or sudo access for its system extension. In that case, the maintenance script reports a warning and continues so the rest of the machine stays up to date.
 

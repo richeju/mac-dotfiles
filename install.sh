@@ -6,6 +6,7 @@
 set -euo pipefail
 
 AUTO_MODE="false"
+VERIFY_MODE="false"
 GIT_NAME="${GIT_NAME:-}"
 GIT_EMAIL="${GIT_EMAIL:-}"
 
@@ -15,6 +16,7 @@ Usage: install.sh [options]
 
 Options:
   --auto                 Run in non-interactive mode
+  --verify               Check current machine readiness without changing anything
   --git-name <name>      Git user name (required with --auto if GIT_NAME env not set)
   --git-email <email>    Git user email (required with --auto if GIT_EMAIL env not set)
   -h, --help             Show this help
@@ -25,6 +27,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --auto)
             AUTO_MODE="true"
+            shift
+            ;;
+        --verify)
+            VERIFY_MODE="true"
             shift
             ;;
         --git-name)
@@ -54,16 +60,6 @@ if [[ "${AUTO:-0}" == "1" ]]; then
     AUTO_MODE="true"
 fi
 
-if [[ "$AUTO_MODE" == "true" ]]; then
-    if [[ -z "$GIT_NAME" || -z "$GIT_EMAIL" ]]; then
-        echo "In --auto mode, provide --git-name and --git-email (or GIT_NAME/GIT_EMAIL env vars)."
-        exit 1
-    fi
-fi
-
-echo "🚀 macOS Bootstrap Script"
-echo "========================="
-
 # Colors for messages
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -74,6 +70,7 @@ log_info() { echo -e "${GREEN}✓${NC} $1"; }
 log_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
 log_error() { echo -e "${RED}✗${NC} $1"; exit 1; }
 DOTFILES_APPLIED="false"
+VERIFY_WARNINGS=0
 
 require_command() {
     if ! command -v "$1" &> /dev/null; then
@@ -81,8 +78,30 @@ require_command() {
     fi
 }
 
+verify_ok() {
+    log_info "$1"
+}
+
+verify_warn() {
+    log_warning "$1"
+    VERIFY_WARNINGS=$((VERIFY_WARNINGS + 1))
+}
+
+verify_command() {
+    local cmd="$1"
+    if command -v "$cmd" &>/dev/null; then
+        verify_ok "Command available: $cmd"
+    else
+        verify_warn "Missing command: $cmd"
+    fi
+}
+
 ensure_brew_in_path() {
     if command -v brew &>/dev/null; then
+        return 0
+    fi
+
+    if [[ "${MAC_DOTFILES_SKIP_BREW_PATH_DETECTION:-0}" == "1" ]]; then
         return 0
     fi
 
@@ -92,6 +111,109 @@ ensure_brew_in_path() {
         eval "$(/usr/local/bin/brew shellenv)"
     fi
 }
+
+run_verify() {
+    echo "🔎 macOS Bootstrap Verification"
+    echo "==============================="
+
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        verify_ok "Running on macOS"
+    else
+        verify_warn "This repository targets macOS; current OSTYPE is '$OSTYPE'"
+    fi
+
+    verify_command curl
+    verify_command git
+
+    ensure_brew_in_path
+    if command -v brew &>/dev/null; then
+        verify_ok "Homebrew installed: $(brew --prefix)"
+
+        if brew list chezmoi &>/dev/null; then
+            verify_ok "chezmoi installed via Homebrew"
+        else
+            verify_warn "chezmoi is not installed via Homebrew"
+        fi
+
+        if [[ -f "$HOME/.Brewfile" ]]; then
+            verify_ok "Homebrew global Brewfile exists: $HOME/.Brewfile"
+            if brew bundle check --global --quiet; then
+                verify_ok "Homebrew global Brewfile dependencies are satisfied"
+            else
+                verify_warn "Homebrew global Brewfile has missing or outdated dependencies"
+            fi
+        else
+            verify_warn "Homebrew global Brewfile is missing: $HOME/.Brewfile"
+        fi
+    else
+        verify_warn "Homebrew is not installed or not in PATH"
+    fi
+
+    if command -v chezmoi &>/dev/null; then
+        verify_ok "chezmoi available: $(chezmoi --version)"
+        if [[ -d "$HOME/.local/share/chezmoi" ]]; then
+            verify_ok "chezmoi source directory exists"
+        else
+            verify_warn "chezmoi source directory is missing"
+        fi
+
+        if [[ -z "$(chezmoi diff 2>/dev/null)" ]]; then
+            verify_ok "No pending chezmoi changes"
+        else
+            verify_warn "There are pending chezmoi changes"
+        fi
+    else
+        verify_warn "chezmoi is not installed or not in PATH"
+    fi
+
+    if command -v gh &>/dev/null; then
+        verify_ok "GitHub CLI available: $(gh --version | head -n 1)"
+        if gh auth status &>/dev/null; then
+            verify_ok "GitHub CLI authentication is configured"
+        else
+            verify_warn "GitHub CLI is installed but not authenticated"
+        fi
+    else
+        verify_warn "GitHub CLI is missing"
+    fi
+
+    if [[ -x "$HOME/.local/bin/mac-dotfiles-maintenance.sh" ]]; then
+        verify_ok "Maintenance script is installed"
+    else
+        verify_warn "Maintenance script is missing or not executable"
+    fi
+
+    if [[ -f "$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist" ]]; then
+        verify_ok "Maintenance LaunchAgent plist exists"
+    else
+        verify_warn "Maintenance LaunchAgent plist is missing"
+    fi
+
+    echo ""
+    if [[ "$VERIFY_WARNINGS" -eq 0 ]]; then
+        echo -e "${GREEN}✓ Verification completed successfully.${NC}"
+        return 0
+    fi
+
+    echo -e "${YELLOW}⚠ Verification completed with ${VERIFY_WARNINGS} warning(s).${NC}"
+    echo "Run 'chezmoi update --apply' or the normal installer to reconcile this machine."
+    return 1
+}
+
+if [[ "$VERIFY_MODE" == "true" ]]; then
+    run_verify
+    exit $?
+fi
+
+if [[ "$AUTO_MODE" == "true" ]]; then
+    if [[ -z "$GIT_NAME" || -z "$GIT_EMAIL" ]]; then
+        echo "In --auto mode, provide --git-name and --git-email (or GIT_NAME/GIT_EMAIL env vars)."
+        exit 1
+    fi
+fi
+
+echo "🚀 macOS Bootstrap Script"
+echo "========================="
 
 SUDO_KEEPALIVE_PID=""
 start_sudo_keepalive() {
