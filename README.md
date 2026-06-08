@@ -2,20 +2,21 @@
 
 Automatic installation and configuration script for new macOS setup using [chezmoi](https://www.chezmoi.io/)
 
-## 🚀 Quick Installation
+## 🚀 One-Button Setup
 
-On a new Mac, run one of these in Terminal:
+On a new Mac, an already configured Mac, or a machine that needs repair, run:
 
-Safer path (recommended):
+```bash
+curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash
+```
+
+This is the main entrypoint. It installs missing prerequisites, initializes or updates chezmoi, applies managed files non-interactively, repairs missing managed helpers, and then exits.
+
+Safer audit-first path:
 ```bash
 curl -fsSL -o /tmp/mac-dotfiles-install.sh https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh
 less /tmp/mac-dotfiles-install.sh
 bash /tmp/mac-dotfiles-install.sh
-```
-
-Fast path:
-```bash
-curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash
 ```
 
 Zero-interaction mode (for full automation):
@@ -28,7 +29,7 @@ Verification mode (no changes, no sudo prompt):
 curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash -s -- --verify
 ```
 
-After installation, use the local launcher for day-to-day actions:
+After installation, an optional local launcher is available for day-to-day actions:
 ```bash
 mac-dotfiles.sh
 ```
@@ -40,7 +41,7 @@ The installer adds `~/.local/bin` to your shell `PATH` so managed helper command
 This repository is designed for both:
 
 - A fresh macOS install: `install.sh` installs Homebrew and chezmoi, applies the dotfiles, renders `~/.Brewfile`, then installs the required packages with `brew bundle --global --verbose`.
-- Existing installs: rerunning `install.sh` reconciles managed files with `chezmoi update --apply --force --no-tty`, so missing managed helpers are restored without prompts.
+- Existing installs and repairs: rerunning `install.sh` reconciles managed files with `chezmoi update --apply --force --no-tty`, so missing managed helpers are restored without prompts.
 - Ongoing updates: the managed maintenance scripts run `chezmoi update --apply`, `brew update`, `brew upgrade`, `brew upgrade --cask --greedy`, cleanup, and diagnostics.
 - Readiness checks: `install.sh --verify` audits Homebrew, chezmoi, `~/.Brewfile`, package status, GitHub CLI/auth, and maintenance files without changing the machine.
 

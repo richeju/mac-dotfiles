@@ -322,6 +322,7 @@ else
 fi
 echo ""
 echo "Useful commands:"
+echo "  mac-dotfiles.sh   - Optional local launcher"
 echo "  chezmoi diff     - See what would change"
 echo "  chezmoi apply    - Apply changes"
 echo "  chezmoi update   - Pull and apply latest changes"

@@ -177,6 +177,8 @@ SUDO
   assert_contains "$output" "Syncing and applying existing dotfiles" "install should self-heal existing dotfiles"
   assert_contains "$output" "chezmoi-update-apply-called" "install should run forced non-interactive chezmoi update --apply"
   assert_contains "$output" "Your dotfiles have been applied with chezmoi." "install should report applied state"
+  assert_contains "$output" "mac-dotfiles.sh   - Optional local launcher" "install should mention launcher as optional"
+  assert_not_contains "$output" "mac-dotfiles\n============" "install should not open the interactive launcher"
 }
 
 main() {
