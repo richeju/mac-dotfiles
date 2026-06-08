@@ -7,6 +7,12 @@ MAINTENANCE_LOG="$STATE_DIR/maintenance.log"
 LAUNCHD_LOG="$STATE_DIR/launchd.log"
 CHEZMOI_SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
 LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-report.XXXXXX")"
+
+cleanup() {
+    rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
 
 command_exists() {
     command -v "$1" >/dev/null 2>&1
@@ -16,13 +22,22 @@ strip_ansi() {
     sed -E $'s/\x1B\\[[0-9;]*[[:alpha:]]//g'
 }
 
+capture_command() {
+    local name="$1"
+    shift
+
+    "$@" > "$TMP_DIR/$name.out" 2> "$TMP_DIR/$name.err"
+}
+
 print_command_value() {
     local label="$1"
     shift
+    local key
+    key="$(echo "$label" | tr -c '[:alnum:]' '_' | tr '[:upper:]' '[:lower:]')"
 
-    if "$@" >/tmp/mac-dotfiles-report-value.$$ 2>/tmp/mac-dotfiles-report-error.$$; then
+    if capture_command "$key" "$@"; then
         local value
-        value="$(head -n 1 /tmp/mac-dotfiles-report-value.$$)"
+        value="$(head -n 1 "$TMP_DIR/$key.out")"
         if [[ -n "$value" ]]; then
             printf -- '- %s: `%s`\n' "$label" "$value"
         else
@@ -30,15 +45,13 @@ print_command_value() {
         fi
     else
         local error
-        error="$(head -n 1 /tmp/mac-dotfiles-report-error.$$)"
+        error="$(head -n 1 "$TMP_DIR/$key.err")"
         if [[ -n "$error" ]]; then
             printf -- "- %s: warning - %s\n" "$label" "$error"
         else
             printf -- "- %s: unavailable\n" "$label"
         fi
     fi
-
-    rm -f /tmp/mac-dotfiles-report-value.$$ /tmp/mac-dotfiles-report-error.$$
 }
 
 print_section_command() {
@@ -133,12 +146,11 @@ fi
 
 if command_exists gh; then
     print_command_value "GitHub CLI" gh --version
-    if gh auth status >/tmp/mac-dotfiles-report-gh-auth.$$ 2>&1; then
+    if capture_command "gh-auth" gh auth status; then
         echo "- GitHub auth: configured"
     else
         echo "- GitHub auth: warning"
     fi
-    rm -f /tmp/mac-dotfiles-report-gh-auth.$$
 else
     echo "- GitHub CLI: missing"
 fi
@@ -153,13 +165,12 @@ echo
 echo "## Homebrew"
 echo
 if command_exists brew; then
-    if bundle_status >/tmp/mac-dotfiles-report-bundle.$$ 2>&1; then
+    if capture_command "bundle" bundle_status; then
         echo "- Bundle: satisfied"
     else
         echo "- Bundle: warning"
     fi
-    sed 's/^/  /' /tmp/mac-dotfiles-report-bundle.$$
-    rm -f /tmp/mac-dotfiles-report-bundle.$$
+    sed 's/^/  /' "$TMP_DIR/bundle.out"
 
     echo
     echo "### Brewfile Formulae"
