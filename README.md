@@ -23,6 +23,15 @@ Zero-interaction mode (for full automation):
 curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash -s -- --auto --git-name "Your Name" --git-email "you@example.com"
 ```
 
+## ✅ Fresh Install and Updates
+
+This repository is designed for both:
+
+- A fresh macOS install: `install.sh` installs Homebrew and chezmoi, applies the dotfiles, renders `~/.Brewfile`, then installs the required packages with `brew bundle --global --verbose`.
+- Ongoing updates: the managed maintenance scripts run `chezmoi update --apply`, `brew update`, `brew upgrade`, `brew upgrade --cask --greedy`, cleanup, and diagnostics.
+
+Some macOS apps can still require manual approval or an administrator password during cask upgrades. For example, Dropbox may ask for Privacy & Security approval or sudo access for its system extension. In that case, the maintenance script reports a warning and continues so the rest of the machine stays up to date.
+
 ## 📦 What Gets Installed
 
 ### Essential Tools
@@ -107,6 +116,12 @@ Daily automatic tasks (via macOS LaunchAgent):
 - Scheduled every day at 04:00 + at login
 
 You can disable the automatic dotfiles sync by setting `AUTO_CHEZMOI_UPDATE=0` before running the maintenance script manually.
+
+If a cask upgrade needs interactive macOS approval, rerun the specific upgrade manually after approving it in System Settings:
+
+```bash
+brew upgrade --cask dropbox
+```
 
 
 ### Fully Automated Installation
@@ -234,6 +249,7 @@ A helper wrapper is also provided:
 - Already installed tools are skipped
 - Interactive Git configuration if not already configured
 - Automatic maintenance runs once per day
+- Cask upgrade failures that require manual macOS approval are reported without blocking the rest of maintenance
 
 ## 🔐 Security
 
