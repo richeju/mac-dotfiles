@@ -15,7 +15,9 @@ run_brew_maintenance() {
     brew upgrade
 
     echo "⬆️  Upgrading casks..."
-    brew upgrade --cask --greedy
+    if ! brew upgrade --cask --greedy; then
+        echo "⚠️  Some cask upgrades failed. Review the logs/output above and retry manually if needed."
+    fi
 
     echo "🧹 Cleaning up old versions..."
     brew cleanup -s

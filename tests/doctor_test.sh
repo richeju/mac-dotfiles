@@ -33,7 +33,7 @@ run_doctor() {
   shift
   set +e
   local output
-  output="$(HOME="$env_dir/home" PATH="$env_dir/bin:$PATH" OSTYPE="$os_type" bash "$DOCTOR_SCRIPT" "$@" 2>&1)"
+  output="$(HOME="$env_dir/home" PATH="$env_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin" OSTYPE="$os_type" bash "$DOCTOR_SCRIPT" "$@" 2>&1)"
   local status=$?
   set -e
   printf '%s\n__EXIT_STATUS__=%s\n' "$output" "$status"
@@ -81,7 +81,7 @@ if [[ "$1" == "--version" ]]; then
   echo "chezmoi version v2.55.0"
   exit 0
 fi
-if [[ "$1" == "diff" && "$2" == "--quiet" ]]; then
+if [[ "$1" == "diff" ]]; then
   exit 0
 fi
 if [[ "$1" == "apply" ]]; then
@@ -220,11 +220,12 @@ if [[ "\$1" == "--version" ]]; then
   echo "chezmoi version v2.55.0"
   exit 0
 fi
-if [[ "\$1" == "diff" && "\$2" == "--quiet" ]]; then
+if [[ "\$1" == "diff" ]]; then
   if [[ -f "\$state_file" ]]; then
     exit 0
   fi
-  exit 1
+  echo pending change
+  exit 0
 fi
 if [[ "\$1" == "apply" ]]; then
   echo chezmoi-fix-called >> "$env_dir/chezmoi.log"

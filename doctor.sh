@@ -117,7 +117,7 @@ check_version_if_available() {
     fi
 
     local current
-    current="$($extractor)"
+    current="$(bash -c "$extractor")"
     check_min_version "$name" "$current" "$minimum"
 }
 
@@ -155,6 +155,10 @@ auto_fix_chezmoi() {
         "Auto-fix completed for pending dotfile changes" \
         "Auto-fix failed for pending dotfile changes" \
         chezmoi apply
+}
+
+check_chezmoi_diff() {
+    [[ -z "$(chezmoi diff)" ]]
 }
 
 run_check_with_optional_fix() {
@@ -287,7 +291,7 @@ for required_cmd in git curl brew chezmoi; do
 done
 
 check_version_if_available git git 2.30.0 "git --version | awk '{print \$3}'"
-check_version_if_available chezmoi chezmoi 2.0.0 "chezmoi --version | awk '{print \$3}' | sed 's/v//'"
+check_version_if_available chezmoi chezmoi 2.0.0 "chezmoi --version | sed -E 's/.*v?([0-9]+\\.[0-9]+\\.[0-9]+).*/\\1/'"
 
 if command_exists brew; then
     run_check_with_optional_fix \
@@ -306,7 +310,7 @@ if command_exists chezmoi; then
         "There are pending dotfile changes (run: chezmoi diff / chezmoi apply)" \
         "Pending dotfile changes fixed successfully" \
         auto_fix_chezmoi \
-        chezmoi diff --quiet
+        check_chezmoi_diff
 fi
 
 check_broken_symlink "$HOME/.Brewfile" "Homebrew global Brewfile"
