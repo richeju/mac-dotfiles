@@ -65,7 +65,6 @@ Some macOS apps can still require manual approval or an administrator password d
 - **Bitwarden**: Password manager
 - **Dropbox**: Cloud storage
 - **Raycast**: Productivity launcher
-- **Steam**: Game platform
 
 ### Additional CLI Tools (Brewfile)
 - **jq**: command-line JSON processor
