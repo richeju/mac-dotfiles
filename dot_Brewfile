@@ -7,5 +7,6 @@ cask "nvidia-geforce-now"     # Cloud gaming
 cask "raycast"                # Productivity launcher
 cask "signal"                 # Messaging app
 cask "shottr"                 # Screenshot and annotation tool
+cask "steam"                  # Game platform
 cask "vlc"                    # Media player
 cask "whatsapp"               # Messaging app
