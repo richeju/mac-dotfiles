@@ -32,6 +32,8 @@ INSTALL
 #!/usr/bin/env bash
 if [[ "${1:-}" == "--explain" ]]; then
   echo "explain-called"
+elif [[ "${1:-}" == "--fix" ]]; then
+  echo "doctor-fix-called"
 else
   echo "doctor-called"
 fi
@@ -55,11 +57,26 @@ MAINT
   cat > "$env_dir/bin/chezmoi" <<'CHEZ'
 #!/usr/bin/env bash
 if [[ "$1" == "update" ]]; then
-  echo "update-called"
+  printf 'chezmoi'
+  for arg in "$@"; do
+    printf ' %s' "$arg"
+  done
+  printf '\n'
 elif [[ "$1" == "diff" ]]; then
   echo "diff-called"
 fi
 CHEZ
+
+  cat > "$env_dir/bin/brew" <<'BREW'
+#!/usr/bin/env bash
+if [[ "$1" == "bundle" ]]; then
+  printf 'brew'
+  for arg in "$@"; do
+    printf ' %s' "$arg"
+  done
+  printf '\n'
+fi
+BREW
 
   chmod +x \
     "$env_dir/home/.local/share/chezmoi/install.sh" \
@@ -67,7 +84,8 @@ CHEZ
     "$env_dir/home/.local/bin/mac-dotfiles-report.sh" \
     "$env_dir/home/.local/bin/mac-dotfiles-safe-update.sh" \
     "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh" \
-    "$env_dir/bin/chezmoi"
+    "$env_dir/bin/chezmoi" \
+    "$env_dir/bin/brew"
 
   echo "$env_dir"
 }
@@ -96,7 +114,15 @@ test_direct_commands() {
   assert_contains "$output" "safe-update-called" "safe-update command should call safe update script"
 
   output="$(run_launcher "$env_dir" update)"
-  assert_contains "$output" "update-called" "update command should call chezmoi update"
+  assert_contains "$output" "chezmoi update --apply" "update command should call chezmoi update"
+
+  report_path="$env_dir/home/repair-report.md"
+  output="$(run_launcher "$env_dir" repair "$report_path")"
+  assert_contains "$output" "chezmoi update --apply --force --no-tty" "repair should force a non-interactive chezmoi update"
+  assert_contains "$output" "brew bundle --global --verbose" "repair should reconcile the global Brewfile"
+  assert_contains "$output" "doctor-fix-called" "repair should run doctor --fix"
+  assert_contains "$output" "Report written to $report_path" "repair should write a report"
+  assert_contains "$(cat "$report_path")" "report-called" "repair report should contain report output"
 
   output="$(run_launcher "$env_dir" explain)"
   assert_contains "$output" "explain-called" "explain command should call doctor --explain"

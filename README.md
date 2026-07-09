@@ -166,6 +166,7 @@ mac-dotfiles.sh
 
 The launcher provides a compact numbered menu for common actions:
 - verify machine readiness
+- repair/reconcile this Mac
 - safe update with backups
 - update dotfiles
 - generate a machine report
@@ -176,11 +177,14 @@ The launcher provides a compact numbered menu for common actions:
 You can also call commands directly:
 ```bash
 mac-dotfiles.sh verify
+mac-dotfiles.sh repair
 mac-dotfiles.sh safe-update
 mac-dotfiles.sh report
 mac-dotfiles.sh doctor
 mac-dotfiles.sh explain
 ```
+
+Use `mac-dotfiles.sh repair` after the initial install whenever you want to put the Mac back into the expected state. It applies the latest dotfiles, reconciles the global Brewfile, runs doctor auto-fixes, and writes `~/mac-dotfiles-repair-report.md`.
 
 #### Edit configuration files
 ```bash
