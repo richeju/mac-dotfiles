@@ -189,10 +189,26 @@ test_existing_chezmoi_runs_update_apply() {
   assert_not_contains "$output" "mac-dotfiles\n============" "install should not open the interactive launcher"
 }
 
+test_minimal_mode_skips_bundle_summary() {
+  local env_dir run_output status output
+  env_dir="$(setup_env)"
+  write_common_mocks "$env_dir"
+
+  run_output="$(run_install "$env_dir" --minimal)"
+  status="$(parse_status "$run_output")"
+  output="$(strip_status_line "$run_output")"
+
+  assert_exit_code "$status" 0 "install --minimal should succeed when prerequisites exist"
+  assert_contains "$output" "Minimal mode enabled" "minimal mode should announce itself"
+  assert_contains "$output" "Full Homebrew bundle skipped for minimal setup" "summary should mark the full bundle as skipped"
+  assert_contains "$output" "Minimal setup completed" "minimal mode should explain the post-install path"
+}
+
 main() {
   test_verify_happy_path
   test_verify_reports_missing_homebrew
   test_existing_chezmoi_runs_update_apply
+  test_minimal_mode_skips_bundle_summary
   echo "[PASS] install.sh tests completed"
 }
 

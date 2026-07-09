@@ -8,6 +8,12 @@ set -euo pipefail
 
 echo "📦 Installing/updating packages from Brewfile..."
 
+if [[ "${MAC_DOTFILES_MINIMAL:-0}" == "1" ]]; then
+    echo "ℹ️  Minimal setup requested; skipping full Homebrew bundle."
+    echo "   Run mac-dotfiles.sh repair when ready to install/reconcile all packages."
+    exit 0
+fi
+
 if ! command -v brew &> /dev/null; then
     echo "❌ Homebrew is not installed. Please run install.sh first."
     exit 1

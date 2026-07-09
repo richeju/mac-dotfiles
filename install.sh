@@ -7,6 +7,7 @@ set -euo pipefail
 
 AUTO_MODE="false"
 VERIFY_MODE="false"
+MINIMAL_MODE="false"
 GIT_NAME="${GIT_NAME:-}"
 GIT_EMAIL="${GIT_EMAIL:-}"
 
@@ -16,6 +17,7 @@ Usage: install.sh [options]
 
 Options:
   --auto                 Run in non-interactive mode
+  --minimal              Apply core dotfiles but skip the full Homebrew bundle
   --verify               Check current machine readiness without changing anything
   --git-name <name>      Git user name (required with --auto if GIT_NAME env not set)
   --git-email <email>    Git user email (required with --auto if GIT_EMAIL env not set)
@@ -27,6 +29,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --auto)
             AUTO_MODE="true"
+            shift
+            ;;
+        --minimal)
+            MINIMAL_MODE="true"
             shift
             ;;
         --verify)
@@ -58,6 +64,10 @@ done
 
 if [[ "${AUTO:-0}" == "1" ]]; then
     AUTO_MODE="true"
+fi
+
+if [[ "${MINIMAL:-0}" == "1" ]]; then
+    MINIMAL_MODE="true"
 fi
 
 # Colors for messages
@@ -223,6 +233,11 @@ fi
 echo "🚀 macOS Bootstrap Script"
 echo "========================="
 
+if [[ "$MINIMAL_MODE" == "true" ]]; then
+    export MAC_DOTFILES_MINIMAL=1
+    log_info "Minimal mode enabled: full Homebrew bundle will be skipped"
+fi
+
 SUDO_KEEPALIVE_PID=""
 start_sudo_keepalive() {
     while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
@@ -303,7 +318,9 @@ print_install_summary() {
         summary_warn "Maintenance script is missing"
     fi
 
-    if command -v brew >/dev/null 2>&1 && [[ -f "$HOME/.Brewfile" ]]; then
+    if [[ "$MINIMAL_MODE" == "true" ]]; then
+        summary_ok "Full Homebrew bundle skipped for minimal setup"
+    elif command -v brew >/dev/null 2>&1 && [[ -f "$HOME/.Brewfile" ]]; then
         if brew bundle check --global --quiet >/dev/null 2>&1; then
             summary_ok "Homebrew bundle satisfied"
         else
@@ -408,6 +425,9 @@ if [[ "$DOTFILES_APPLIED" == "true" ]]; then
     echo "Your dotfiles have been applied with chezmoi."
 else
     echo "Chezmoi is installed and ready. Run 'chezmoi update --apply' to sync and apply your dotfiles."
+fi
+if [[ "$MINIMAL_MODE" == "true" ]]; then
+    echo "Minimal setup completed. Run 'mac-dotfiles.sh repair' when ready to install and reconcile all packages."
 fi
 print_install_summary
 echo ""

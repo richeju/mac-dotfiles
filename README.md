@@ -28,6 +28,13 @@ Zero-interaction mode (for full automation):
 curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash -s -- --auto --git-name "Your Name" --git-email "you@example.com"
 ```
 
+Minimal mode (core setup now, full apps later):
+```bash
+curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash -s -- --minimal
+```
+
+Minimal mode installs/applies the core dotfiles flow but skips the full Homebrew bundle during the chezmoi run. Later, run `mac-dotfiles.sh repair` to install and reconcile all packages.
+
 Verification mode (no changes, no sudo prompt):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash -s -- --verify
