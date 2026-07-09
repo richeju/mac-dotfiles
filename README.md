@@ -14,6 +14,8 @@ This is the main entrypoint. It installs missing prerequisites, initializes or u
 
 When Homebrew is already installed, the installer does not request administrator privileges. A password may still be required on a fresh Mac if Homebrew or macOS command line tools need to be installed.
 
+At the end, the installer prints a compact summary of what is ready and what may still need attention, then points to `mac-dotfiles.sh repair` for post-install reconciliation.
+
 Safer audit-first path:
 ```bash
 curl -fsSL -o /tmp/mac-dotfiles-install.sh https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh

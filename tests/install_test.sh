@@ -44,7 +44,11 @@ setup_env() {
 #!/usr/bin/env bash
 exit 0
 SCRIPT
-  chmod +x "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh"
+  cat > "$env_dir/home/.local/bin/mac-dotfiles.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 0
+SCRIPT
+  chmod +x "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh" "$env_dir/home/.local/bin/mac-dotfiles.sh"
   echo "$env_dir"
 }
 
@@ -177,7 +181,11 @@ test_existing_chezmoi_runs_update_apply() {
   assert_contains "$output" "chezmoi-update-apply-called" "install should run forced non-interactive chezmoi update --apply"
   assert_not_contains "$output" "chezmoi-update-read-stdin" "install should not let chezmoi consume script stdin"
   assert_contains "$output" "Your dotfiles have been applied with chezmoi." "install should report applied state"
+  assert_contains "$output" "Install summary" "install should print a final summary"
+  assert_contains "$output" "Homebrew bundle satisfied" "summary should report bundle state"
+  assert_contains "$output" "Everything looks squared away" "summary should report all-clear when checks pass"
   assert_contains "$output" "mac-dotfiles.sh   - Optional local launcher" "install should mention launcher as optional"
+  assert_contains "$output" "mac-dotfiles.sh repair" "install should suggest the repair command"
   assert_not_contains "$output" "mac-dotfiles\n============" "install should not open the interactive launcher"
 }
 

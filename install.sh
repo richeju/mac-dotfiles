@@ -256,6 +256,88 @@ ensure_sudo_for_homebrew_install() {
     log_error "Failed to obtain sudo privileges. Please make sure you have administrator access."
 }
 
+print_install_summary() {
+    local warning_count=0
+
+    summary_ok() {
+        echo -e "  ${GREEN}✓${NC} $1"
+    }
+
+    summary_warn() {
+        echo -e "  ${YELLOW}⚠${NC} $1"
+        warning_count=$((warning_count + 1))
+    }
+
+    echo ""
+    echo "📋 Install summary"
+    echo "=================="
+    echo "Checks:"
+
+    if command -v brew >/dev/null 2>&1; then
+        summary_ok "Homebrew available at $(brew --prefix 2>/dev/null || echo unknown)"
+    else
+        summary_warn "Homebrew is missing or not in PATH"
+    fi
+
+    if command -v chezmoi >/dev/null 2>&1; then
+        summary_ok "chezmoi available"
+    else
+        summary_warn "chezmoi is missing or not in PATH"
+    fi
+
+    if [[ "$DOTFILES_APPLIED" == "true" ]]; then
+        summary_ok "Dotfiles applied"
+    else
+        summary_warn "Dotfiles were not applied"
+    fi
+
+    if [[ -x "$HOME/.local/bin/mac-dotfiles.sh" ]]; then
+        summary_ok "Launcher installed: mac-dotfiles.sh"
+    else
+        summary_warn "Launcher is missing; run 'chezmoi apply' or 'mac-dotfiles.sh repair' after opening a new shell"
+    fi
+
+    if [[ -x "$HOME/.local/bin/mac-dotfiles-maintenance.sh" ]]; then
+        summary_ok "Maintenance script installed"
+    else
+        summary_warn "Maintenance script is missing"
+    fi
+
+    if command -v brew >/dev/null 2>&1 && [[ -f "$HOME/.Brewfile" ]]; then
+        if brew bundle check --global --quiet >/dev/null 2>&1; then
+            summary_ok "Homebrew bundle satisfied"
+        else
+            summary_warn "Homebrew bundle still has missing or outdated items"
+        fi
+    else
+        summary_warn "Homebrew bundle could not be checked"
+    fi
+
+    if command -v gh >/dev/null 2>&1; then
+        if gh auth status >/dev/null 2>&1; then
+            summary_ok "GitHub CLI authenticated"
+        else
+            summary_warn "GitHub CLI is installed but not authenticated"
+        fi
+    else
+        summary_warn "GitHub CLI is not installed yet"
+    fi
+
+    if [[ -f "$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist" ]]; then
+        summary_ok "Maintenance LaunchAgent plist present"
+    else
+        summary_warn "Maintenance LaunchAgent plist is missing"
+    fi
+
+    echo ""
+    if [[ "$warning_count" -eq 0 ]]; then
+        echo -e "${GREEN}Everything looks squared away.${NC}"
+    else
+        echo -e "${YELLOW}${warning_count} item(s) may need attention.${NC}"
+        echo "Run 'mac-dotfiles.sh repair' after opening a new shell to reconcile the machine."
+    fi
+}
+
 # Verify macOS
 if [[ "$OSTYPE" != "darwin"* ]]; then
     log_error "This script is only for macOS"
@@ -327,9 +409,11 @@ if [[ "$DOTFILES_APPLIED" == "true" ]]; then
 else
     echo "Chezmoi is installed and ready. Run 'chezmoi update --apply' to sync and apply your dotfiles."
 fi
+print_install_summary
 echo ""
 echo "Useful commands:"
 echo "  mac-dotfiles.sh   - Optional local launcher"
+echo "  mac-dotfiles.sh repair - Reconcile dotfiles, packages, and health checks"
 echo "  chezmoi diff     - See what would change"
 echo "  chezmoi apply    - Apply changes"
 echo "  chezmoi update   - Pull and apply latest changes"
