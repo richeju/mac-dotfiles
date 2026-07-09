@@ -166,17 +166,12 @@ test_existing_chezmoi_runs_update_apply() {
   env_dir="$(setup_env)"
   write_common_mocks "$env_dir"
 
-  cat > "$env_dir/bin/sudo" <<'SUDO'
-#!/usr/bin/env bash
-exit 0
-SUDO
-  chmod +x "$env_dir/bin/sudo"
-
   run_output="$(run_install "$env_dir")"
   status="$(parse_status "$run_output")"
   output="$(strip_status_line "$run_output")"
 
   assert_exit_code "$status" 0 "install should succeed when chezmoi is already initialized"
+  assert_not_contains "$output" "administrator privileges" "install should not request sudo when Homebrew is already installed"
   assert_contains "$output" "Chezmoi already initialized" "existing chezmoi state should be detected"
   assert_contains "$output" "Syncing and applying existing dotfiles" "install should self-heal existing dotfiles"
   assert_contains "$output" "chezmoi-update-apply-called" "install should run forced non-interactive chezmoi update --apply"

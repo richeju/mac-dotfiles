@@ -235,21 +235,26 @@ stop_sudo_keepalive() {
     fi
 }
 
-# Check if user has sudo access
-log_info "Checking sudo access..."
-if ! sudo -n true 2>/dev/null; then
-    echo ""
-    echo -e "${YELLOW}⚠️  This script requires administrator privileges.${NC}"
-    echo "You will be prompted for your password to install system packages."
-    echo ""
-    if ! sudo -v; then
-        log_error "Failed to obtain sudo privileges. Please make sure you have administrator access."
+ensure_sudo_for_homebrew_install() {
+    if sudo -n true 2>/dev/null; then
+        start_sudo_keepalive
+        trap stop_sudo_keepalive EXIT
+        return 0
     fi
-fi
 
-# Keep sudo alive
-start_sudo_keepalive
-trap stop_sudo_keepalive EXIT
+    echo ""
+    echo -e "${YELLOW}⚠️  Installing Homebrew may require administrator privileges.${NC}"
+    echo "You may be prompted for your password by Homebrew or macOS command line tools."
+    echo ""
+
+    if sudo -v; then
+        start_sudo_keepalive
+        trap stop_sudo_keepalive EXIT
+        return 0
+    fi
+
+    log_error "Failed to obtain sudo privileges. Please make sure you have administrator access."
+}
 
 # Verify macOS
 if [[ "$OSTYPE" != "darwin"* ]]; then
@@ -262,6 +267,7 @@ ensure_brew_in_path
 # Install Homebrew
 if ! command -v brew &> /dev/null; then
     log_info "Installing Homebrew..."
+    ensure_sudo_for_homebrew_install
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
     # Add Homebrew to PATH for Apple Silicon
