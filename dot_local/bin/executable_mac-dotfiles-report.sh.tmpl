@@ -9,6 +9,8 @@ CHEZMOI_SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
 LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist"
 CONVERGE_SCRIPT="$HOME/.local/bin/mac-dotfiles-converge.sh"
 TRANSACTIONS_DIR="$STATE_DIR/transactions"
+MIGRATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-migrate.sh"
+LATEST_CERTIFICATION="$STATE_DIR/certifications/latest.json"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-report.XXXXXX")"
 
 cleanup() {
@@ -230,6 +232,17 @@ if [[ -x "$CONVERGE_SCRIPT" ]]; then
     fi
 else
     echo "- Convergence engine: unavailable"
+fi
+if [[ -x "$MIGRATE_SCRIPT" ]]; then
+    migration_status="$($MIGRATE_SCRIPT status --json 2>/dev/null || true)"
+    if [[ -n "$migration_status" ]]; then
+        echo "- Schema: $(jq -r '"\(.current)/\(.desired)"' <<<"$migration_status")"
+    fi
+fi
+if [[ -f "$LATEST_CERTIFICATION" ]]; then
+    echo "- Latest certification: $(jq -r '"\(.overall) (`\(.commit[0:7])`, \(.timestamp))"' "$LATEST_CERTIFICATION")"
+else
+    echo "- Latest certification: none"
 fi
 
 echo

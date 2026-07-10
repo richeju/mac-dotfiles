@@ -21,6 +21,7 @@ ROLLBACK_ERRORS=0
 BACKUP_INDEX=0
 TRANSACTION_ACTIVE=0
 ROLLBACK_PACKAGES=1
+MIGRATIONS_DRIFT=0
 
 usage() {
     cat <<'USAGE'
@@ -110,6 +111,14 @@ profile_description() {
         gaming) echo "Personal profile plus gaming applications" ;;
         full) echo "Complete current setup (personal + gaming)" ;;
     esac
+}
+
+migrator_path() {
+    if [[ -x "$HOME/.local/bin/mac-dotfiles-migrate.sh" ]]; then
+        echo "$HOME/.local/bin/mac-dotfiles-migrate.sh"
+    elif [[ -f "$SOURCE_DIR/dot_local/bin/executable_mac-dotfiles-migrate.sh.tmpl" ]]; then
+        echo "$SOURCE_DIR/dot_local/bin/executable_mac-dotfiles-migrate.sh.tmpl"
+    fi
 }
 
 profile_component() {
@@ -284,6 +293,7 @@ inspect_drift() {
     local diff_file="$2"
     local brew_file="$3"
     PLAN_DRIFT=0
+    MIGRATIONS_DRIFT=0
 
     if ! chezmoi diff >"$diff_file" 2>&1; then
         echo "Unable to inspect chezmoi drift." >&2
@@ -302,11 +312,18 @@ inspect_drift() {
     else
         PLAN_DRIFT=1
     fi
+
+    local migrator
+    migrator="$(migrator_path)"
+    if [[ -n "$migrator" ]] && ! bash "$migrator" check >/dev/null 2>&1; then
+        PLAN_DRIFT=1
+        MIGRATIONS_DRIFT=1
+    fi
 }
 
 print_plan() {
     local desired diff_file brew_file temp_dir
-    local brewfile_changed=false dotfiles_changed=false packages_changed=false
+    local brewfile_changed=false dotfiles_changed=false packages_changed=false migrations_changed=false
     require_command chezmoi
     require_command brew
     temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-plan.XXXXXX")"
@@ -324,6 +341,7 @@ print_plan() {
     [[ -f "$HOME/.Brewfile" ]] || brewfile_changed=true
     [[ ! -s "$diff_file" ]] || dotfiles_changed=true
     [[ ! -s "$brew_file" ]] || packages_changed=true
+    [[ "$MIGRATIONS_DRIFT" -eq 0 ]] || migrations_changed=true
 
     if [[ "$JSON_MODE" -eq 1 ]]; then
         require_command jq
@@ -334,8 +352,9 @@ print_plan() {
             --argjson brewfile_changed "$brewfile_changed" \
             --argjson dotfiles_changed "$dotfiles_changed" \
             --argjson packages_changed "$packages_changed" \
+            --argjson migrations_changed "$migrations_changed" \
             --argjson cleanup "$([[ "$CLEANUP" -eq 1 ]] && echo true || echo false)" \
-            '{schema_version: 1, profile: $profile, description: $description, drift: $drift, actions: {brewfile: $brewfile_changed, dotfiles: $dotfiles_changed, packages: $packages_changed, cleanup: $cleanup}}'
+            '{schema_version: 1, profile: $profile, description: $description, drift: $drift, actions: {migrations: $migrations_changed, brewfile: $brewfile_changed, dotfiles: $dotfiles_changed, packages: $packages_changed, cleanup: $cleanup}}'
         rm -rf "$temp_dir"
         return 0
     fi
@@ -344,6 +363,12 @@ print_plan() {
     echo "================================"
     echo "Profile: $PROFILE — $(profile_description "$PROFILE")"
     echo
+
+    if [[ "$MIGRATIONS_DRIFT" -eq 1 ]]; then
+        echo "  [MIGRATE][reversible] Apply pending repository schema migrations"
+    else
+        echo "  [OK]     Repository schema is current"
+    fi
 
     if [[ ! -f "$HOME/.Brewfile" ]] || ! cmp -s "$desired" "$HOME/.Brewfile"; then
         echo "  [CHANGE][reversible] Render ~/.Brewfile for profile '$PROFILE'"
@@ -435,6 +460,7 @@ snapshot_transaction() {
     done < <(chezmoi managed --include=files,symlinks --path-style=absolute)
     config="$(config_file)"
     backup_target "$config"
+    backup_target "$STATE_DIR/schema-version"
 
     brew leaves 2>/dev/null | sort >"$RUN_DIR/brew-leaves-before.txt" || :
     brew list --cask 2>/dev/null | sort >"$RUN_DIR/brew-casks-before.txt" || :
@@ -590,6 +616,7 @@ blocking_validate() {
     local desired
     desired="$(new_temp_brewfile)"
     local status=0
+    local migrator
 
     if [[ -n "$(chezmoi diff 2>/dev/null)" ]]; then
         echo "✗ Managed dotfiles still differ from the source" >&2
@@ -616,6 +643,15 @@ blocking_validate() {
             status=1
         fi
     fi
+    migrator="$(migrator_path)"
+    if [[ -z "$migrator" ]]; then
+        echo "✓ No repository migration catalog configured"
+    elif bash "$migrator" check >/dev/null 2>&1; then
+        echo "✓ Repository schema is current"
+    else
+        echo "✗ Repository schema migrations are pending" >&2
+        status=1
+    fi
     rm -f "$desired"
     return "$status"
 }
@@ -628,7 +664,12 @@ validate_command() {
 }
 
 apply_convergence() {
-    local launchagent_backup=""
+    local launchagent_backup="" migrator
+    migrator="$(migrator_path)"
+    if [[ -n "$migrator" ]]; then
+        echo "==> Applying repository schema migrations"
+        MAC_DOTFILES_LOCK_HELD=1 bash "$migrator" apply || return 1
+    fi
     if [[ "$PROFILE" != "$(current_profile)" ]]; then
         set_profile "$PROFILE"
     fi

@@ -465,6 +465,11 @@ else
     DOTFILES_APPLIED="true"
 fi
 
+MIGRATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-migrate.sh"
+if [[ -x "$MIGRATE_SCRIPT" ]]; then
+    "$MIGRATE_SCRIPT" apply
+fi
+
 PROFILE_SCRIPT="$HOME/.local/bin/mac-dotfiles-converge.sh"
 if [[ "$PROFILE_SET" -eq 1 && -x "$PROFILE_SCRIPT" ]]; then
     if [[ "$($PROFILE_SCRIPT profile current)" != "$PROFILE" ]]; then

@@ -81,6 +81,15 @@ done
 printf '\n'
 CONVERGE
 
+    cat >"$env_dir/home/.local/bin/mac-dotfiles-migrate.sh" <<'MIGRATE'
+#!/usr/bin/env bash
+printf 'migrate-engine %s\n' "$*"
+MIGRATE
+    cat >"$env_dir/home/.local/bin/mac-dotfiles-certify.sh" <<'CERTIFY'
+#!/usr/bin/env bash
+printf 'certify-engine %s\n' "$*"
+CERTIFY
+
     cat >"$env_dir/bin/chezmoi" <<'CHEZ'
 #!/usr/bin/env bash
 if [[ "$1" == "update" ]]; then
@@ -116,6 +125,8 @@ BREW
         "$env_dir/home/.local/bin/mac-dotfiles-history.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-converge.sh" \
+        "$env_dir/home/.local/bin/mac-dotfiles-migrate.sh" \
+        "$env_dir/home/.local/bin/mac-dotfiles-certify.sh" \
         "$env_dir/bin/chezmoi" \
         "$env_dir/bin/brew"
 
@@ -181,6 +192,12 @@ test_direct_commands() {
 
     output="$(run_launcher "$env_dir" tx-rollback latest --yes)"
     assert_contains "$output" "converge-engine rollback latest --yes" "transaction rollback should route correctly"
+
+    output="$(run_launcher "$env_dir" migrate plan --json)"
+    assert_contains "$output" "migrate-engine plan --json" "migration command should forward arguments"
+
+    output="$(run_launcher "$env_dir" certify --json --skip-live)"
+    assert_contains "$output" "certify-engine --json --skip-live" "certify command should forward arguments"
 }
 
 test_menu_exit() {
