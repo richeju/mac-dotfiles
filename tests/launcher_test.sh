@@ -49,6 +49,15 @@ REPORT
 echo "safe-update-called"
 SAFE
 
+  cat > "$env_dir/home/.local/bin/mac-dotfiles-rollback.sh" <<'ROLLBACK'
+#!/usr/bin/env bash
+printf 'rollback-called'
+for arg in "$@"; do
+  printf ' %s' "$arg"
+done
+printf '\n'
+ROLLBACK
+
   cat > "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh" <<'MAINT'
 #!/usr/bin/env bash
 echo "maintenance-called"
@@ -83,6 +92,7 @@ BREW
     "$env_dir/home/.local/share/chezmoi/doctor.sh" \
     "$env_dir/home/.local/bin/mac-dotfiles-report.sh" \
     "$env_dir/home/.local/bin/mac-dotfiles-safe-update.sh" \
+    "$env_dir/home/.local/bin/mac-dotfiles-rollback.sh" \
     "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh" \
     "$env_dir/bin/chezmoi" \
     "$env_dir/bin/brew"
@@ -112,6 +122,9 @@ test_direct_commands() {
 
   output="$(run_launcher "$env_dir" safe-update)"
   assert_contains "$output" "safe-update-called" "safe-update command should call safe update script"
+
+  output="$(run_launcher "$env_dir" rollback latest --dry-run)"
+  assert_contains "$output" "rollback-called latest --dry-run" "rollback command should forward its arguments"
 
   output="$(run_launcher "$env_dir" update)"
   assert_contains "$output" "chezmoi update --apply" "update command should call chezmoi update"

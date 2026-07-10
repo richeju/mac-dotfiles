@@ -7,6 +7,7 @@ INSTALL_SCRIPT="$CHEZMOI_SOURCE_DIR/install.sh"
 DOCTOR_SCRIPT="$CHEZMOI_SOURCE_DIR/doctor.sh"
 REPORT_SCRIPT="$HOME/.local/bin/mac-dotfiles-report.sh"
 SAFE_UPDATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-safe-update.sh"
+ROLLBACK_SCRIPT="$HOME/.local/bin/mac-dotfiles-rollback.sh"
 MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-maintenance.sh"
 
 usage() {
@@ -18,6 +19,7 @@ Commands:
   verify        Audit machine readiness without changing anything
   repair        Reconcile dotfiles, packages, health checks, and report
   safe-update   Run update with before/after reports and backups
+  rollback      Restore files from a safe-update backup
   update        Run chezmoi update --apply
   report        Generate a Markdown machine report
   doctor        Run the repository health check
@@ -81,6 +83,10 @@ run_safe_update() {
     run_if_executable "$SAFE_UPDATE_SCRIPT"
 }
 
+run_rollback() {
+    run_if_executable "$ROLLBACK_SCRIPT" "$@"
+}
+
 run_update() {
     if ! command -v chezmoi >/dev/null 2>&1; then
         echo "Missing command: chezmoi" >&2
@@ -125,12 +131,13 @@ mac-dotfiles
 1. Verify machine readiness
 2. Repair/reconcile this Mac
 3. Safe update with backups
-4. Update dotfiles
-5. Generate machine report
-6. Run doctor
-7. Explain doctor warnings
-8. Run maintenance
-9. Show chezmoi diff
+4. Roll back a safe update
+5. Update dotfiles
+6. Generate machine report
+7. Run doctor
+8. Explain doctor warnings
+9. Run maintenance
+10. Show chezmoi diff
 0. Exit
 
 MENU
@@ -148,12 +155,13 @@ run_menu() {
             1) run_verify ;;
             2) run_repair ;;
             3) run_safe_update ;;
-            4) run_update ;;
-            5) run_report ;;
-            6) run_doctor ;;
-            7) run_explain ;;
-            8) run_maintenance ;;
-            9) run_diff ;;
+            4) run_rollback ;;
+            5) run_update ;;
+            6) run_report ;;
+            7) run_doctor ;;
+            8) run_explain ;;
+            9) run_maintenance ;;
+            10) run_diff ;;
             0|q|quit|exit) echo "Bye."; return 0 ;;
             *) echo "Unknown option: $choice" >&2 ;;
         esac
@@ -173,6 +181,7 @@ case "$command" in
     verify) run_verify "$@" ;;
     repair|reconcile) run_repair "$@" ;;
     safe-update) run_safe_update "$@" ;;
+    rollback) run_rollback "$@" ;;
     update) run_update "$@" ;;
     report) run_report "$@" ;;
     doctor) run_doctor "$@" ;;

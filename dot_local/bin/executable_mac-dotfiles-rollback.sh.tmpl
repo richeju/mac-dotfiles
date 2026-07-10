@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+STATE_DIR="$HOME/.local/state/mac-dotfiles"
+SAFE_UPDATE_DIR="$STATE_DIR/safe-updates"
+ROLLBACK_BACKUP_DIR="$STATE_DIR/rollback-backups"
+RUN_ID=""
+DRY_RUN=0
+ASSUME_YES=0
+
+usage() {
+    cat <<'USAGE'
+Usage: mac-dotfiles-rollback.sh [latest|RUN_ID] [--dry-run] [--yes]
+
+Options:
+  --dry-run  Show what would be restored without changing files.
+  --yes      Restore without an interactive confirmation.
+  -h, --help Show this help.
+USAGE
+}
+
+while (($#)); do
+    case "$1" in
+        --dry-run)
+            DRY_RUN=1
+            ;;
+        --yes)
+            ASSUME_YES=1
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+        *)
+            if [[ -n "$RUN_ID" ]]; then
+                echo "Only one safe-update run can be selected." >&2
+                exit 2
+            fi
+            RUN_ID="$1"
+            ;;
+    esac
+    shift
+done
+
+RUN_ID="${RUN_ID:-latest}"
+
+find_latest_run_id() {
+    local candidate candidate_id latest=""
+
+    for candidate in "$SAFE_UPDATE_DIR"/*; do
+        [[ -d "$candidate/backups" ]] || continue
+        candidate_id="${candidate##*/}"
+        [[ "$candidate_id" =~ ^[0-9]{8}-[0-9]{6}$ ]] || continue
+        if [[ -z "$latest" || "$candidate_id" > "$latest" ]]; then
+            latest="$candidate_id"
+        fi
+    done
+
+    [[ -n "$latest" ]] || return 1
+    printf '%s\n' "$latest"
+}
+
+if [[ "$RUN_ID" == "latest" ]]; then
+    if ! RUN_ID="$(find_latest_run_id)"; then
+        echo "No safe-update backup found under $SAFE_UPDATE_DIR" >&2
+        exit 1
+    fi
+elif [[ ! "$RUN_ID" =~ ^[0-9]{8}-[0-9]{6}$ ]]; then
+    echo "Invalid run ID: $RUN_ID" >&2
+    exit 2
+fi
+
+RUN_DIR="$SAFE_UPDATE_DIR/$RUN_ID"
+BACKUP_DIR="$RUN_DIR/backups"
+
+if [[ ! -d "$BACKUP_DIR" ]]; then
+    echo "Backup directory not found: $BACKUP_DIR" >&2
+    exit 1
+fi
+
+TARGETS=(
+    "$HOME/.gitconfig"
+    "$HOME/.Brewfile"
+    "$HOME/.zprofile"
+    "$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist"
+)
+BACKUP_NAMES=(
+    ".gitconfig"
+    ".Brewfile"
+    ".zprofile"
+    "Library__LaunchAgents__com.chezmoi.mac-dotfiles.maintenance.plist"
+)
+
+echo "↩ mac-dotfiles rollback"
+echo "========================"
+echo "Safe-update run: $RUN_ID"
+echo
+
+restore_count=0
+for i in "${!TARGETS[@]}"; do
+    backup="$BACKUP_DIR/${BACKUP_NAMES[$i]}"
+    target="${TARGETS[$i]}"
+
+    if [[ -e "$backup" || -L "$backup" ]]; then
+        if [[ -d "$target" && ! -L "$target" ]]; then
+            echo "Refusing to replace directory: $target" >&2
+            exit 1
+        fi
+        echo "  $target"
+        restore_count=$((restore_count + 1))
+    fi
+done
+
+if [[ "$restore_count" -eq 0 ]]; then
+    echo "No restorable files found in $BACKUP_DIR" >&2
+    exit 1
+fi
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo
+    echo "Dry run complete; no files changed."
+    exit 0
+fi
+
+if [[ "$ASSUME_YES" -ne 1 ]]; then
+    if [[ ! -t 0 ]]; then
+        echo "Interactive confirmation required; rerun with --yes." >&2
+        exit 1
+    fi
+
+    printf "Restore %d file(s) from this backup? [y/N] " "$restore_count"
+    IFS= read -r answer
+    case "$answer" in
+        y|Y|yes|YES) ;;
+        *) echo "Rollback cancelled."; exit 0 ;;
+    esac
+fi
+
+ROLLBACK_ID="$(date '+%Y%m%d-%H%M%S')-from-$RUN_ID"
+CURRENT_BACKUP_DIR="$ROLLBACK_BACKUP_DIR/$ROLLBACK_ID"
+mkdir -p "$CURRENT_BACKUP_DIR"
+
+for i in "${!TARGETS[@]}"; do
+    backup="$BACKUP_DIR/${BACKUP_NAMES[$i]}"
+    target="${TARGETS[$i]}"
+    current_backup="$CURRENT_BACKUP_DIR/${BACKUP_NAMES[$i]}"
+
+    [[ -e "$backup" || -L "$backup" ]] || continue
+
+    if [[ -e "$target" || -L "$target" ]]; then
+        cp -a "$target" "$current_backup"
+    fi
+
+    mkdir -p "$(dirname "$target")"
+    rm -f "$target"
+    cp -a "$backup" "$target"
+    echo "✓ Restored $target"
+done
+
+echo
+echo "Rollback completed. Previous files saved under:"
+echo "  $CURRENT_BACKUP_DIR"
+
+if command -v chezmoi >/dev/null 2>&1; then
+    echo
+    echo "Current chezmoi diff:"
+    chezmoi diff || true
+fi
