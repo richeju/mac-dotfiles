@@ -1,6 +1,12 @@
 # Ignore repo files
+.github/
+Brewfile
 README.md
+doctor.sh
 install.sh
+lib/
+skills/
+tests/
 
 # Ignore sensitive files
 .ssh/

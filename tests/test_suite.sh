@@ -17,6 +17,17 @@ validate_chezmoi_source_names() {
     done
 }
 
+validate_repo_files_are_ignored() {
+    local path
+
+    for path in .github/ Brewfile README.md doctor.sh install.sh lib/ skills/ tests/; do
+        if ! grep -Fqx "$path" "$REPO_ROOT/.chezmoiignore"; then
+            echo "Repository-only path is missing from .chezmoiignore: $path" >&2
+            return 1
+        fi
+    done
+}
+
 validate_script() {
     local script="$1"
 
@@ -56,6 +67,7 @@ run_test_suites() {
 
 echo "==> Validating chezmoi source names"
 validate_chezmoi_source_names
+validate_repo_files_are_ignored
 
 echo "==> Validating shell syntax"
 validate_shell_syntax
