@@ -4,6 +4,19 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+validate_chezmoi_source_names() {
+    local path
+
+    git -C "$REPO_ROOT" ls-files | while IFS= read -r path; do
+        case "$path" in
+            */run_*)
+                echo "Reserved chezmoi run_ prefix outside repository root: $path" >&2
+                return 1
+                ;;
+        esac
+    done
+}
+
 validate_script() {
     local script="$1"
 
@@ -40,6 +53,9 @@ run_test_suites() {
         bash "$REPO_ROOT/$test_file"
     done
 }
+
+echo "==> Validating chezmoi source names"
+validate_chezmoi_source_names
 
 echo "==> Validating shell syntax"
 validate_shell_syntax

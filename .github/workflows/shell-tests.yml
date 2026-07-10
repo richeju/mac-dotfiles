@@ -15,4 +15,4 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validate scripts and run test suites
-        run: bash tests/run_all.sh
+        run: bash tests/test_suite.sh

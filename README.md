@@ -287,7 +287,7 @@ brew bundle --global --verbose
 - `install.sh` - Initial installation script
 - `doctor.sh` - Health check script for dependencies and dotfile status
 - `lib/doctor_output.sh` - JSON, Markdown, and explanation renderers used by the health check
-- `tests/run_all.sh` - Syntax validation and entry point for the complete shell test suite
+- `tests/test_suite.sh` - Syntax validation and entry point for the complete shell test suite
 - `dot_local/bin/executable_mac-dotfiles.sh.tmpl` - Compact launcher/menu for common workflows
 - `run_once_configure-dock-darwin.sh` - Dock configuration (runs once)
 - `run_once_configure-finder-and-inputs-darwin.sh` - Finder and input comfort defaults (runs once)
