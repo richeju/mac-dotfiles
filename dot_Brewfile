@@ -1,4 +1,5 @@
 cask "bitwarden"              # Password manager
+cask "codex-app"              # OpenAI Codex desktop app
 cask "discord"                # Gaming communication
 cask "dropbox"                # Cloud storage
 brew "gh"                     # GitHub CLI

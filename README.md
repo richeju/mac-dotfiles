@@ -178,6 +178,7 @@ The launcher provides a compact numbered menu for common actions:
 - repair/reconcile this Mac
 - safe update with backups
 - roll back files from a safe-update backup
+- inspect and prune update history
 - update dotfiles
 - generate a machine report
 - run doctor
@@ -190,6 +191,7 @@ mac-dotfiles.sh verify
 mac-dotfiles.sh repair
 mac-dotfiles.sh safe-update
 mac-dotfiles.sh rollback latest --dry-run
+mac-dotfiles.sh history
 mac-dotfiles.sh report
 mac-dotfiles.sh doctor
 mac-dotfiles.sh explain
@@ -256,6 +258,14 @@ mac-dotfiles.sh rollback latest
 
 Rollback restores the managed files captured by a safe update. It shows the selected files first, asks for confirmation, and saves the current versions under `~/.local/state/mac-dotfiles/rollback-backups/` before replacing them. Use a timestamp such as `20260710-103000` instead of `latest` to select a specific run, or add `--yes` for non-interactive use.
 
+#### Inspect and prune history
+```bash
+mac-dotfiles.sh history
+mac-dotfiles.sh history --prune --keep 10
+```
+
+History lists safe-update runs and rollback backups with their size and file count. Pruning keeps the newest entries of each type, shows a deletion plan, and requires confirmation unless `--yes` is provided.
+
 #### Update from repository
 ```bash
 chezmoi update --apply
@@ -309,6 +319,7 @@ brew bundle --global --verbose
 - `dot_local/bin/executable_mac-dotfiles-report.sh.tmpl` - Markdown machine report generator written to `~/.local/bin`
 - `dot_local/bin/executable_mac-dotfiles-safe-update.sh.tmpl` - Safe update wrapper with before/after reports, backups, and saved diff
 - `dot_local/bin/executable_mac-dotfiles-rollback.sh.tmpl` - Confirmed or dry-run restoration from safe-update backups
+- `dot_local/bin/executable_mac-dotfiles-history.sh.tmpl` - Backup history listing and retention cleanup
 - `dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl` - LaunchAgent scheduled at 04:00 + run at login
 - `run_once_enable-maintenance-launchagent-darwin.sh.tmpl` - Loads/enables the LaunchAgent automatically
 

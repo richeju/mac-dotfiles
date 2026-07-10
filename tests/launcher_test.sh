@@ -58,6 +58,15 @@ done
 printf '\n'
 ROLLBACK
 
+  cat > "$env_dir/home/.local/bin/mac-dotfiles-history.sh" <<'HISTORY'
+#!/usr/bin/env bash
+printf 'history-called'
+for arg in "$@"; do
+  printf ' %s' "$arg"
+done
+printf '\n'
+HISTORY
+
   cat > "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh" <<'MAINT'
 #!/usr/bin/env bash
 echo "maintenance-called"
@@ -93,6 +102,7 @@ BREW
     "$env_dir/home/.local/bin/mac-dotfiles-report.sh" \
     "$env_dir/home/.local/bin/mac-dotfiles-safe-update.sh" \
     "$env_dir/home/.local/bin/mac-dotfiles-rollback.sh" \
+    "$env_dir/home/.local/bin/mac-dotfiles-history.sh" \
     "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh" \
     "$env_dir/bin/chezmoi" \
     "$env_dir/bin/brew"
@@ -125,6 +135,9 @@ test_direct_commands() {
 
   output="$(run_launcher "$env_dir" rollback latest --dry-run)"
   assert_contains "$output" "rollback-called latest --dry-run" "rollback command should forward its arguments"
+
+  output="$(run_launcher "$env_dir" history --prune --keep 10 --yes)"
+  assert_contains "$output" "history-called --prune --keep 10 --yes" "history command should forward its arguments"
 
   output="$(run_launcher "$env_dir" update)"
   assert_contains "$output" "chezmoi update --apply" "update command should call chezmoi update"

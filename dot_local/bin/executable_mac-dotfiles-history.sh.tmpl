@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+STATE_DIR="$HOME/.local/state/mac-dotfiles"
+SAFE_UPDATE_DIR="$STATE_DIR/safe-updates"
+ROLLBACK_DIR="$STATE_DIR/rollback-backups"
+PRUNE=0
+KEEP=10
+KEEP_SET=0
+ASSUME_YES=0
+
+usage() {
+    cat <<'USAGE'
+Usage: mac-dotfiles-history.sh [--prune] [--keep N] [--yes]
+
+Options:
+  --prune   Delete old safe-update and rollback entries.
+  --keep N  Keep the N newest entries of each type (default: 10).
+  --yes     Prune without an interactive confirmation.
+  -h, --help  Show this help.
+USAGE
+}
+
+while (($#)); do
+    case "$1" in
+        --prune)
+            PRUNE=1
+            ;;
+        --keep)
+            [[ $# -ge 2 ]] || { echo "Missing value for --keep" >&2; exit 2; }
+            KEEP="$2"
+            KEEP_SET=1
+            shift
+            ;;
+        --yes)
+            ASSUME_YES=1
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+if [[ ! "$KEEP" =~ ^[1-9][0-9]*$ ]]; then
+    echo "--keep must be a positive integer" >&2
+    exit 2
+fi
+
+if [[ "$KEEP_SET" -eq 1 && "$PRUNE" -ne 1 ]]; then
+    echo "--keep requires --prune" >&2
+    exit 2
+fi
+
+list_directories() {
+    local root="$1"
+    [[ -d "$root" ]] || return 0
+    find "$root" -mindepth 1 -maxdepth 1 -type d -print | sort -r
+}
+
+directory_count() {
+    local root="$1"
+    list_directories "$root" | wc -l | tr -d ' '
+}
+
+directory_size() {
+    du -sh "$1" 2>/dev/null | awk '{print $1}'
+}
+
+backup_file_count() {
+    local backup_dir="$1/backups"
+    if [[ ! -d "$backup_dir" ]]; then
+        echo 0
+        return
+    fi
+
+    find "$backup_dir" \( -type f -o -type l \) | wc -l | tr -d ' '
+}
+
+print_safe_updates() {
+    local path id files size reports latest=1 found=0 marker
+
+    echo "Safe-update history"
+    printf '%-17s  %6s  %8s  %-7s  %s\n' "Run ID" "Files" "Size" "Reports" ""
+
+    while IFS= read -r path; do
+        [[ -n "$path" ]] || continue
+        found=1
+        id="${path##*/}"
+        files="$(backup_file_count "$path")"
+        size="$(directory_size "$path")"
+        reports="missing"
+        if [[ -f "$path/report-before.md" && -f "$path/report-after.md" ]]; then
+            reports="yes"
+        fi
+        marker=""
+        if [[ "$latest" -eq 1 ]]; then
+            marker="latest"
+            latest=0
+        fi
+        printf '%-17s  %6s  %8s  %-7s  %s\n' "$id" "$files" "$size" "$reports" "$marker"
+    done < <(list_directories "$SAFE_UPDATE_DIR")
+
+    if [[ "$found" -eq 0 ]]; then
+        echo "No safe-update history found."
+    fi
+}
+
+print_rollbacks() {
+    local path id files size found=0
+
+    echo
+    echo "Rollback backups"
+    printf '%-38s  %6s  %8s\n' "Rollback ID" "Files" "Size"
+
+    while IFS= read -r path; do
+        [[ -n "$path" ]] || continue
+        found=1
+        id="${path##*/}"
+        files="$(find "$path" \( -type f -o -type l \) | wc -l | tr -d ' ')"
+        size="$(directory_size "$path")"
+        printf '%-38s  %6s  %8s\n' "$id" "$files" "$size"
+    done < <(list_directories "$ROLLBACK_DIR")
+
+    if [[ "$found" -eq 0 ]]; then
+        echo "No rollback backups found."
+    fi
+}
+
+prune_directory() {
+    local root="$1"
+    local index=0 path
+
+    while IFS= read -r path; do
+        [[ -n "$path" ]] || continue
+        index=$((index + 1))
+        if [[ "$index" -gt "$KEEP" ]]; then
+            rm -rf "$path"
+            echo "✓ Removed $path"
+        fi
+    done < <(list_directories "$root")
+}
+
+prune_history() {
+    local safe_count rollback_count safe_remove rollback_remove total_remove
+
+    safe_count="$(directory_count "$SAFE_UPDATE_DIR")"
+    rollback_count="$(directory_count "$ROLLBACK_DIR")"
+    safe_remove=$((safe_count > KEEP ? safe_count - KEEP : 0))
+    rollback_remove=$((rollback_count > KEEP ? rollback_count - KEEP : 0))
+    total_remove=$((safe_remove + rollback_remove))
+
+    echo
+    if [[ "$total_remove" -eq 0 ]]; then
+        echo "Nothing to prune; keeping the newest $KEEP entries of each type."
+        return
+    fi
+
+    echo "Prune plan: $safe_remove safe-update run(s), $rollback_remove rollback backup(s)."
+    if [[ "$ASSUME_YES" -ne 1 ]]; then
+        if [[ ! -t 0 ]]; then
+            echo "Interactive confirmation required; rerun with --yes." >&2
+            exit 1
+        fi
+        printf "Keep the newest %d entries of each type and delete the rest? [y/N] " "$KEEP"
+        IFS= read -r answer
+        case "$answer" in
+            y|Y|yes|YES) ;;
+            *) echo "Prune cancelled."; return ;;
+        esac
+    fi
+
+    prune_directory "$SAFE_UPDATE_DIR"
+    prune_directory "$ROLLBACK_DIR"
+}
+
+echo "🕘 mac-dotfiles history"
+echo "========================"
+print_safe_updates
+print_rollbacks
+
+if [[ "$PRUNE" -eq 1 ]]; then
+    prune_history
+fi
