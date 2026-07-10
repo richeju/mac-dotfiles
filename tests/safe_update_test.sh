@@ -72,8 +72,25 @@ test_safe_update_happy_path() {
     [[ -f "$run_dir/backups/.Brewfile" ]] || fail "Brewfile backup missing"
 }
 
+test_safe_update_respects_shared_operation_lock() {
+    local env_dir output status lock
+    env_dir="$(setup_env)"
+    write_mocks "$env_dir"
+    lock="$env_dir/home/.local/state/mac-dotfiles/operation.lock"
+    mkdir -p "$lock"
+    echo "$$" >"$lock/pid"
+
+    set +e
+    output="$(HOME="$env_dir/home" PATH="$env_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin" bash "$SAFE_UPDATE_SCRIPT" 2>&1)"
+    status=$?
+    set -e
+    [[ "$status" -eq 1 ]] || fail "safe update should refuse a concurrent operation"
+    assert_contains "$output" "Another mac-dotfiles operation is running" "shared lock should be explained"
+}
+
 main() {
     test_safe_update_happy_path
+    test_safe_update_respects_shared_operation_lock
     echo "[PASS] safe update tests completed"
 }
 

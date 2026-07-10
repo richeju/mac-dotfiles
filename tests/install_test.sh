@@ -98,6 +98,11 @@ case "$1" in
       echo "chezmoi-update-apply-called"
     fi
     ;;
+  init)
+    echo "chezmoi-init-args:$*"
+    echo "chezmoi-init-profile:${MAC_DOTFILES_PROFILE:-missing}"
+    echo "chezmoi-init-name:${GIT_NAME:-missing}"
+    ;;
 esac
 exit 0
 CHEZ
@@ -204,11 +209,42 @@ test_minimal_mode_skips_bundle_summary() {
     assert_contains "$output" "Minimal setup completed" "minimal mode should explain the post-install path"
 }
 
+test_auto_init_uses_supported_chezmoi_flags_and_profile() {
+    local env_dir run_output status output
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
+    rm -rf "$env_dir/home/.local/share/chezmoi"
+
+    run_output="$(run_install "$env_dir" --auto --git-name "Test User" --git-email test@example.com --profile gaming)"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
+
+    assert_exit_code "$status" 0 "fresh auto init should succeed"
+    assert_contains "$output" "chezmoi-init-args:init --apply --no-tty richeju/mac-dotfiles" "auto init should use current chezmoi flags"
+    assert_not_contains "$output" "--data" "auto init must not use the obsolete --data value syntax"
+    assert_contains "$output" "chezmoi-init-profile:gaming" "selected profile should reach the config template"
+    assert_contains "$output" "chezmoi-init-name:Test User" "Git identity should reach the config template"
+}
+
+test_unknown_profile_is_rejected() {
+    local env_dir run_output status output
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
+
+    run_output="$(run_install "$env_dir" --profile impossible)"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
+    assert_exit_code "$status" 1 "unknown profile should fail"
+    assert_contains "$output" "Unknown profile: impossible" "unknown profile should be explained"
+}
+
 main() {
     test_verify_happy_path
     test_verify_reports_missing_homebrew
     test_existing_chezmoi_runs_update_apply
     test_minimal_mode_skips_bundle_summary
+    test_auto_init_uses_supported_chezmoi_flags_and_profile
+    test_unknown_profile_is_rejected
     echo "[PASS] install.sh tests completed"
 }
 

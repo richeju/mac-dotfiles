@@ -8,6 +8,7 @@ ROLLBACK_BACKUP_DIR="$STATE_DIR/rollback-backups"
 RUN_ID=""
 DRY_RUN=0
 ASSUME_YES=0
+LOCK_DIR="$STATE_DIR/operation.lock"
 
 usage() {
     cat <<'USAGE'
@@ -28,7 +29,7 @@ while (($#)); do
         --yes)
             ASSUME_YES=1
             ;;
-        -h|--help)
+        -h | --help)
             usage
             exit 0
             ;;
@@ -137,10 +138,24 @@ if [[ "$ASSUME_YES" -ne 1 ]]; then
     printf "Restore %d file(s) from this backup? [y/N] " "$restore_count"
     IFS= read -r answer
     case "$answer" in
-        y|Y|yes|YES) ;;
-        *) echo "Rollback cancelled."; exit 0 ;;
+        y | Y | yes | YES) ;;
+        *)
+            echo "Rollback cancelled."
+            exit 0
+            ;;
     esac
 fi
+
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo "Another mac-dotfiles operation is running (lock: $LOCK_DIR)" >&2
+    exit 1
+fi
+echo "$$" >"$LOCK_DIR/pid"
+cleanup_lock() {
+    rm -f "$LOCK_DIR/pid"
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+}
+trap cleanup_lock EXIT INT TERM
 
 ROLLBACK_ID="$(date '+%Y%m%d-%H%M%S')-from-$RUN_ID"
 CURRENT_BACKUP_DIR="$ROLLBACK_BACKUP_DIR/$ROLLBACK_ID"

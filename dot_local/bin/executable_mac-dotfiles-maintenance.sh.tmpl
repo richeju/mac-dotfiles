@@ -7,7 +7,7 @@ export PATH="${MAC_DOTFILES_PATH:-$HOME/.local/bin:/opt/homebrew/bin:/opt/homebr
 
 LOG_DIR="$HOME/.local/state/mac-dotfiles"
 LOG_FILE="$LOG_DIR/maintenance.log"
-LOCK_DIR="$LOG_DIR/maintenance.lock"
+LOCK_DIR="$LOG_DIR/operation.lock"
 AUTO_CHEZMOI_UPDATE="${AUTO_CHEZMOI_UPDATE:-1}"
 BREW_MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-brew-maintenance.sh"
 maintenance_work_done=0
@@ -18,8 +18,10 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
     echo "⚠️  Maintenance already running (lock: $LOCK_DIR), skipping"
     exit 0
 fi
+echo "$$" >"$LOCK_DIR/pid"
 
 cleanup_lock() {
+    rm -f "$LOCK_DIR/pid"
     rmdir "$LOCK_DIR" 2>/dev/null || true
 }
 trap cleanup_lock EXIT

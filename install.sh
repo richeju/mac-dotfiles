@@ -10,6 +10,8 @@ VERIFY_MODE="false"
 MINIMAL_MODE="false"
 GIT_NAME="${GIT_NAME:-}"
 GIT_EMAIL="${GIT_EMAIL:-}"
+PROFILE="${MAC_DOTFILES_PROFILE:-full}"
+PROFILE_SET=0
 
 usage() {
     cat <<'USAGE'
@@ -21,6 +23,7 @@ Options:
   --verify               Check current machine readiness without changing anything
   --git-name <name>      Git user name (required with --auto if GIT_NAME env not set)
   --git-email <email>    Git user email (required with --auto if GIT_EMAIL env not set)
+  --profile <name>       Persistent profile: minimal, personal, developer, gaming, or full
   -h, --help             Show this help
 USAGE
 }
@@ -55,6 +58,15 @@ while [[ $# -gt 0 ]]; do
             GIT_EMAIL="$2"
             shift 2
             ;;
+        --profile)
+            [[ $# -lt 2 ]] && {
+                echo "Missing value for --profile"
+                exit 1
+            }
+            PROFILE="$2"
+            PROFILE_SET=1
+            shift 2
+            ;;
         -h | --help)
             usage
             exit 0
@@ -67,6 +79,14 @@ while [[ $# -gt 0 ]]; do
     esac
 
 done
+
+case "$PROFILE" in
+    minimal | personal | developer | gaming | full) ;;
+    *)
+        echo "Unknown profile: $PROFILE" >&2
+        exit 1
+        ;;
+esac
 
 if [[ "${AUTO:-0}" == "1" ]]; then
     AUTO_MODE="true"
@@ -422,13 +442,35 @@ else
     log_info "Initializing chezmoi with your dotfiles..."
     if [[ "$AUTO_MODE" == "true" ]]; then
         log_info "Running in auto mode (non-interactive)"
-        chezmoi init --apply --promptBool=false --promptInt=false --promptString=false \
-            --data "name=$GIT_NAME" --data "email=$GIT_EMAIL" richeju/mac-dotfiles </dev/null
+        GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" \
+            chezmoi init --apply --no-tty \
+            richeju/mac-dotfiles </dev/null
     else
-        chezmoi init --apply --promptBool=false --promptInt=false --promptString=false \
+        if [[ -z "$GIT_NAME" || -z "$GIT_EMAIL" ]]; then
+            if [[ ! -r /dev/tty ]]; then
+                log_error "Git identity is required; use --git-name and --git-email"
+            fi
+            if [[ -z "$GIT_NAME" ]]; then
+                printf "Full name: " >/dev/tty
+                IFS= read -r GIT_NAME </dev/tty
+            fi
+            if [[ -z "$GIT_EMAIL" ]]; then
+                printf "Email address: " >/dev/tty
+                IFS= read -r GIT_EMAIL </dev/tty
+            fi
+        fi
+        GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" chezmoi init --apply \
             richeju/mac-dotfiles </dev/null
     fi
     DOTFILES_APPLIED="true"
+fi
+
+PROFILE_SCRIPT="$HOME/.local/bin/mac-dotfiles-converge.sh"
+if [[ "$PROFILE_SET" -eq 1 && -x "$PROFILE_SCRIPT" ]]; then
+    if [[ "$($PROFILE_SCRIPT profile current)" != "$PROFILE" ]]; then
+        "$PROFILE_SCRIPT" profile set "$PROFILE"
+        MAC_DOTFILES_MINIMAL="${MAC_DOTFILES_MINIMAL:-0}" chezmoi apply --force --no-tty </dev/null
+    fi
 fi
 
 echo ""

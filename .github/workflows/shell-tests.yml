@@ -21,10 +21,10 @@ jobs:
         run: bash tests/test_suite.sh
 
       - name: Run ShellCheck
-        run: shellcheck doctor.sh install.sh lib/*.sh tests/*.sh
+        run: shellcheck doctor.sh install.sh lib/*.sh tests/*.sh dot_local/bin/*.sh.tmpl
 
       - name: Check shell formatting
-        run: shfmt -d -i 4 -ci doctor.sh install.sh lib/*.sh tests/*.sh
+        run: shfmt -d -i 4 -ci doctor.sh install.sh lib/*.sh tests/*.sh dot_local/bin/*.sh.tmpl
 
   macos-validation:
     runs-on: macos-latest

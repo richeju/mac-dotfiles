@@ -11,6 +11,11 @@
 {{- $dockShowProcessIndicators := index $dock "show_process_indicators" | default true -}}
 set -euo pipefail
 
+if [[ "${MAC_DOTFILES_ORCHESTRATED:-0}" == "1" ]]; then
+  echo "ℹ️ Dock defaults skipped during transactional convergence."
+  exit 0
+fi
+
 echo "Configuring Dock..."
 
 defaults write com.apple.dock tilesize -int {{ $dockSize }}

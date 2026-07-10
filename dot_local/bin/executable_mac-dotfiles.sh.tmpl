@@ -10,6 +10,7 @@ SAFE_UPDATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-safe-update.sh"
 ROLLBACK_SCRIPT="$HOME/.local/bin/mac-dotfiles-rollback.sh"
 HISTORY_SCRIPT="$HOME/.local/bin/mac-dotfiles-history.sh"
 MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-maintenance.sh"
+CONVERGE_SCRIPT="$HOME/.local/bin/mac-dotfiles-converge.sh"
 
 usage() {
     cat <<'USAGE'
@@ -28,6 +29,13 @@ Commands:
   explain       Explain doctor warnings and suggested fixes
   maintenance   Run dotfiles/Homebrew maintenance
   diff          Show chezmoi diff
+  profile       List, inspect, or select a declarative machine profile
+  plan          Preview desired-state changes without modifying the Mac
+  drift         Detect whether the Mac differs from its desired state
+  converge      Apply a transactional convergence with automatic rollback
+  validate      Validate blocking desired-state invariants
+  transactions  List convergence transaction history
+  tx-rollback   Restore a convergence transaction snapshot
   help          Show this help
 USAGE
 }
@@ -57,22 +65,17 @@ run_repair() {
         return 1
     fi
 
-    if ! command -v brew >/dev/null 2>&1; then
-        echo "Missing command: brew" >&2
-        return 1
-    fi
+    echo "==> Updating desired-state source"
+    chezmoi git pull -- --ff-only </dev/null
 
-    echo "==> Syncing and applying dotfiles"
-    chezmoi update --apply --force --no-tty </dev/null
-
-    echo "==> Reconciling Homebrew bundle"
-    brew bundle --global --verbose
+    echo "==> Running transactional convergence"
+    run_if_executable "$CONVERGE_SCRIPT" converge --yes
 
     echo "==> Running doctor auto-fixes"
     run_if_executable "$DOCTOR_SCRIPT" --fix || doctor_status=$?
 
     echo "==> Writing repair report"
-    run_if_executable "$REPORT_SCRIPT" > "$report_target"
+    run_if_executable "$REPORT_SCRIPT" >"$report_target"
     echo "Report written to $report_target"
 
     if [[ "$doctor_status" -ne 0 ]]; then
@@ -82,7 +85,7 @@ run_repair() {
 }
 
 run_safe_update() {
-    run_if_executable "$SAFE_UPDATE_SCRIPT"
+    run_if_executable "$SAFE_UPDATE_SCRIPT" "$@"
 }
 
 run_rollback() {
@@ -104,12 +107,12 @@ run_update() {
 
 run_report() {
     local target="${1:-$HOME/mac-dotfiles-report.md}"
-    run_if_executable "$REPORT_SCRIPT" > "$target"
+    run_if_executable "$REPORT_SCRIPT" >"$target"
     echo "Report written to $target"
 }
 
 run_doctor() {
-    run_if_executable "$DOCTOR_SCRIPT"
+    run_if_executable "$DOCTOR_SCRIPT" "$@"
 }
 
 run_explain() {
@@ -117,7 +120,7 @@ run_explain() {
 }
 
 run_maintenance() {
-    run_if_executable "$MAINTENANCE_SCRIPT"
+    run_if_executable "$MAINTENANCE_SCRIPT" "$@"
 }
 
 run_diff() {
@@ -127,6 +130,22 @@ run_diff() {
     fi
 
     chezmoi diff
+}
+
+run_convergence_command() {
+    local command="$1"
+    shift
+    run_if_executable "$CONVERGE_SCRIPT" "$command" "$@"
+}
+
+run_profile_menu() {
+    local profile
+    run_convergence_command profile list
+    echo
+    printf "New profile (leave empty to keep current): "
+    IFS= read -r profile
+    [[ -z "$profile" ]] && return 0
+    run_convergence_command profile set "$profile"
 }
 
 show_menu() {
@@ -145,6 +164,10 @@ mac-dotfiles
 9. Explain doctor warnings
 10. Run maintenance
 11. Show chezmoi diff
+12. Show desired-state plan
+13. Show configuration drift
+14. Converge this Mac transactionally
+15. Manage machine profile
 0. Exit
 
 MENU
@@ -170,7 +193,14 @@ run_menu() {
             9) run_explain ;;
             10) run_maintenance ;;
             11) run_diff ;;
-            0|q|quit|exit) echo "Bye."; return 0 ;;
+            12) run_convergence_command plan ;;
+            13) run_convergence_command drift || true ;;
+            14) run_convergence_command converge ;;
+            15) run_profile_menu ;;
+            0 | q | quit | exit)
+                echo "Bye."
+                return 0
+                ;;
             *) echo "Unknown option: $choice" >&2 ;;
         esac
 
@@ -187,7 +217,7 @@ shift || true
 case "$command" in
     menu) run_menu ;;
     verify) run_verify "$@" ;;
-    repair|reconcile) run_repair "$@" ;;
+    repair | reconcile) run_repair "$@" ;;
     safe-update) run_safe_update "$@" ;;
     rollback) run_rollback "$@" ;;
     history) run_history "$@" ;;
@@ -197,7 +227,14 @@ case "$command" in
     explain) run_explain "$@" ;;
     maintenance) run_maintenance "$@" ;;
     diff) run_diff "$@" ;;
-    help|-h|--help) usage ;;
+    profile) run_convergence_command profile "$@" ;;
+    plan) run_convergence_command plan "$@" ;;
+    drift) run_convergence_command drift "$@" ;;
+    converge) run_convergence_command converge "$@" ;;
+    validate) run_convergence_command validate "$@" ;;
+    transactions) run_convergence_command transactions "$@" ;;
+    tx-rollback) run_convergence_command rollback "$@" ;;
+    help | -h | --help) usage ;;
     *)
         echo "Unknown command: $command" >&2
         usage >&2

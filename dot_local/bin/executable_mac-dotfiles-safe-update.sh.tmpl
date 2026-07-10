@@ -7,6 +7,21 @@ RUN_ID="$(date '+%Y%m%d-%H%M%S')"
 RUN_DIR="$STATE_DIR/safe-updates/$RUN_ID"
 BACKUP_DIR="$RUN_DIR/backups"
 REPORT_SCRIPT="$HOME/.local/bin/mac-dotfiles-report.sh"
+LOCK_DIR="$STATE_DIR/operation.lock"
+
+mkdir -p "$STATE_DIR"
+
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo "✗ Another mac-dotfiles operation is running (lock: $LOCK_DIR)" >&2
+    exit 1
+fi
+echo "$$" >"$LOCK_DIR/pid"
+
+cleanup_lock() {
+    rm -f "$LOCK_DIR/pid"
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+}
+trap cleanup_lock EXIT INT TERM
 
 mkdir -p "$BACKUP_DIR"
 
@@ -43,13 +58,13 @@ write_report() {
     local target="$1"
 
     if [[ -x "$REPORT_SCRIPT" ]]; then
-        "$REPORT_SCRIPT" > "$target"
+        "$REPORT_SCRIPT" >"$target"
     else
         {
             echo "# mac-dotfiles report"
             echo
             echo "Report script missing at \`$REPORT_SCRIPT\`."
-        } > "$target"
+        } >"$target"
     fi
 }
 
@@ -72,7 +87,7 @@ backup_path "$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.pli
 
 echo
 echo "🧾 Capturing chezmoi diff"
-if chezmoi diff > "$RUN_DIR/chezmoi.diff"; then
+if chezmoi diff >"$RUN_DIR/chezmoi.diff"; then
     log "Diff saved to $RUN_DIR/chezmoi.diff"
 else
     warn "chezmoi diff returned a warning; saved output to $RUN_DIR/chezmoi.diff"

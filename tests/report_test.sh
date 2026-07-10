@@ -40,6 +40,14 @@ exit 0
 DOCTOR
     chmod +x "$env_dir/home/.local/share/chezmoi/doctor.sh"
 
+    cat >"$env_dir/home/.local/bin/mac-dotfiles-converge.sh" <<'CONVERGE'
+#!/usr/bin/env bash
+if [[ "$1" == "profile" && "$2" == "current" ]]; then
+  echo "developer"
+fi
+CONVERGE
+    chmod +x "$env_dir/home/.local/bin/mac-dotfiles-converge.sh"
+
     echo "maintenance-ok" >"$env_dir/home/.local/state/mac-dotfiles/maintenance.log"
     echo "launchd-ok" >"$env_dir/home/.local/state/mac-dotfiles/launchd.log"
     echo "$env_dir"
@@ -131,6 +139,7 @@ test_report_happy_path() {
     assert_contains "$output" "## System" "report should include system section"
     assert_contains "$output" "- Bundle: satisfied" "report should include bundle status"
     assert_contains "$output" "## mac-dotfiles doctor report" "report should include doctor output"
+    assert_contains "$output" "Active profile: \`developer\`" "report should include active desired-state profile"
     assert_contains "$output" "maintenance-ok" "report should include maintenance log"
     assert_contains "$output" "launchd-ok" "report should include launchd log"
 }

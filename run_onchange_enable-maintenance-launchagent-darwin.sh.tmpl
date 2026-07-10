@@ -4,6 +4,11 @@
 # Hash: {{ include "dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl" | sha256sum }}
 set -euo pipefail
 
+if [[ "${MAC_DOTFILES_ORCHESTRATED:-0}" == "1" ]]; then
+    echo "ℹ️  LaunchAgent reload delegated to transactional convergence."
+    exit 0
+fi
+
 PLIST="$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist"
 SERVICE="gui/$(id -u)/com.chezmoi.mac-dotfiles.maintenance"
 
