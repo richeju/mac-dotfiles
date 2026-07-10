@@ -32,6 +32,14 @@ create_rollback() {
     echo "$rollback_id" >"$rollback_dir/.gitconfig"
 }
 
+create_transaction() {
+    local env_dir="$1"
+    local run_id="$2"
+    local transaction_dir="$env_dir/home/.local/state/mac-dotfiles/transactions/$run_id"
+    mkdir -p "$transaction_dir"
+    printf 'status=success\nprofile=full\n' >"$transaction_dir/status.env"
+}
+
 run_history() {
     local env_dir="$1"
     shift
@@ -44,6 +52,7 @@ test_history_lists_latest_entries() {
     create_safe_update "$env_dir" "20260101-120000"
     create_safe_update "$env_dir" "20260102-120000"
     create_rollback "$env_dir" "20260103-120000-from-20260102-120000"
+    create_transaction "$env_dir" "20260104-120000-test"
     newest="$env_dir/home/.local/state/mac-dotfiles/safe-updates/20260102-120000"
     echo before >"$newest/report-before.md"
     echo after >"$newest/report-after.md"
@@ -55,6 +64,7 @@ test_history_lists_latest_entries() {
     assert_contains "$output" "yes      latest" "newest complete run should be marked latest"
     assert_contains "$output" "Rollback backups" "history should include rollback backups"
     assert_contains "$output" "20260103-120000-from-20260102-120000" "history should include rollback ID"
+    assert_contains "$output" "20260104-120000-test" "history should include convergence transaction"
 }
 
 test_prune_keeps_newest_entries() {
@@ -66,6 +76,8 @@ test_prune_keeps_newest_entries() {
     create_safe_update "$env_dir" "20260103-120000"
     create_rollback "$env_dir" "20260101-130000-from-20260101-120000"
     create_rollback "$env_dir" "20260103-130000-from-20260103-120000"
+    create_transaction "$env_dir" "20260101-140000-test"
+    create_transaction "$env_dir" "20260103-140000-test"
 
     output="$(run_history "$env_dir" --prune --keep 1 --yes)"
 
@@ -74,6 +86,8 @@ test_prune_keeps_newest_entries() {
     [[ ! -e "$state_dir/safe-updates/20260102-120000" ]] || fail "older safe update should be removed"
     [[ -d "$state_dir/rollback-backups/20260103-130000-from-20260103-120000" ]] || fail "newest rollback should be kept"
     [[ ! -e "$state_dir/rollback-backups/20260101-130000-from-20260101-120000" ]] || fail "older rollback should be removed"
+    [[ -d "$state_dir/transactions/20260103-140000-test" ]] || fail "newest transaction should be kept"
+    [[ ! -e "$state_dir/transactions/20260101-140000-test" ]] || fail "older transaction should be removed"
 }
 
 main() {

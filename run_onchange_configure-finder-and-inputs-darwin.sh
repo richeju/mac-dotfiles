@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+if [[ "${MAC_DOTFILES_ORCHESTRATED:-0}" == "1" ]]; then
+    echo "ℹ️ Finder/input defaults skipped during transactional convergence."
+    exit 0
+fi
+
 echo "🛠️ Applying Finder and input comfort defaults..."
 
 # Finder: show status and path bars for quicker navigation.

@@ -1,0 +1,15 @@
+{{- $profile := index . "profile" | default "full" -}}
+# Generated profile: {{ $profile }}
+{{ include "profiles/core.Brewfile" -}}
+{{- if ne $profile "minimal" }}
+{{ include "profiles/power.Brewfile" -}}
+{{- end }}
+{{- if or (eq $profile "personal") (eq $profile "developer") (eq $profile "gaming") (eq $profile "full") }}
+{{ include "profiles/personal.Brewfile" -}}
+{{- end }}
+{{- if eq $profile "developer" }}
+{{ include "profiles/developer.Brewfile" -}}
+{{- end }}
+{{- if or (eq $profile "gaming") (eq $profile "full") }}
+{{ include "profiles/gaming.Brewfile" -}}
+{{- end }}

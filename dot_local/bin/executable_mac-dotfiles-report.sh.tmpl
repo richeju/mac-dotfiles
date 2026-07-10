@@ -7,6 +7,8 @@ MAINTENANCE_LOG="$STATE_DIR/maintenance.log"
 LAUNCHD_LOG="$STATE_DIR/launchd.log"
 CHEZMOI_SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
 LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist"
+CONVERGE_SCRIPT="$HOME/.local/bin/mac-dotfiles-converge.sh"
+TRANSACTIONS_DIR="$STATE_DIR/transactions"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-report.XXXXXX")"
 
 cleanup() {
@@ -26,7 +28,7 @@ capture_command() {
     local name="$1"
     shift
 
-    "$@" > "$TMP_DIR/$name.out" 2> "$TMP_DIR/$name.err"
+    "$@" >"$TMP_DIR/$name.out" 2>"$TMP_DIR/$name.err"
 }
 
 print_command_value() {
@@ -39,7 +41,7 @@ print_command_value() {
         local value
         value="$(head -n 1 "$TMP_DIR/$key.out")"
         if [[ -n "$value" ]]; then
-            printf -- '- %s: `%s`\n' "$label" "$value"
+            printf -- "- %s: \`%s\`\n" "$label" "$value"
         else
             printf -- "- %s: OK\n" "$label"
         fi
@@ -208,6 +210,26 @@ if command_exists chezmoi; then
     fi
 else
     echo "chezmoi is not available."
+fi
+
+echo
+echo "## Desired State"
+echo
+if [[ -x "$CONVERGE_SCRIPT" ]]; then
+    profile="$($CONVERGE_SCRIPT profile current 2>/dev/null || echo unknown)"
+    echo "- Active profile: \`$profile\`"
+    latest_transaction=""
+    if [[ -d "$TRANSACTIONS_DIR" ]]; then
+        latest_transaction="$(find "$TRANSACTIONS_DIR" -mindepth 1 -maxdepth 1 -type d | sort -r | head -n 1)"
+    fi
+    if [[ -n "$latest_transaction" && -f "$latest_transaction/status.env" ]]; then
+        transaction_status="$(awk -F= '$1 == "status" {print $2}' "$latest_transaction/status.env")"
+        echo "- Latest transaction: \`${latest_transaction##*/}\` ($transaction_status)"
+    else
+        echo "- Latest transaction: none"
+    fi
+else
+    echo "- Convergence engine: unavailable"
 fi
 
 echo

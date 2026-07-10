@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # run_onchange_install-packages-darwin.sh.tmpl
-# This script runs whenever dot_Brewfile changes.
-# dot_Brewfile is rendered by chezmoi as ~/.Brewfile.
+# This script runs whenever the profile-aware Brewfile inputs change.
+# dot_Brewfile.tmpl is rendered by chezmoi as ~/.Brewfile.
 
-# Hash: {{ include "dot_Brewfile" | sha256sum }}
+# Profile: {{ index . "profile" | default "full" }}
+# Hashes: {{ include "dot_Brewfile.tmpl" | sha256sum }} {{ include "profiles/core.Brewfile" | sha256sum }} {{ include "profiles/power.Brewfile" | sha256sum }} {{ include "profiles/personal.Brewfile" | sha256sum }} {{ include "profiles/developer.Brewfile" | sha256sum }} {{ include "profiles/gaming.Brewfile" | sha256sum }}
 set -euo pipefail
+
+if [[ "${MAC_DOTFILES_ORCHESTRATED:-0}" == "1" ]]; then
+    echo "ℹ️  Package hook delegated to transactional convergence."
+    exit 0
+fi
 
 echo "📦 Installing/updating packages from Brewfile..."
 

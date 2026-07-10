@@ -5,6 +5,8 @@ set -euo pipefail
 STATE_DIR="$HOME/.local/state/mac-dotfiles"
 SAFE_UPDATE_DIR="$STATE_DIR/safe-updates"
 ROLLBACK_DIR="$STATE_DIR/rollback-backups"
+TRANSACTIONS_DIR="$STATE_DIR/transactions"
+TRANSACTION_ROLLBACK_DIR="$STATE_DIR/transaction-rollback-backups"
 PRUNE=0
 KEEP=10
 KEEP_SET=0
@@ -28,7 +30,10 @@ while (($#)); do
             PRUNE=1
             ;;
         --keep)
-            [[ $# -ge 2 ]] || { echo "Missing value for --keep" >&2; exit 2; }
+            [[ $# -ge 2 ]] || {
+                echo "Missing value for --keep" >&2
+                exit 2
+            }
             KEEP="$2"
             KEEP_SET=1
             shift
@@ -36,7 +41,7 @@ while (($#)); do
         --yes)
             ASSUME_YES=1
             ;;
-        -h|--help)
+        -h | --help)
             usage
             exit 0
             ;;
@@ -134,6 +139,39 @@ print_rollbacks() {
     fi
 }
 
+print_transactions() {
+    local path id status profile found=0
+
+    echo
+    echo "Convergence transactions"
+    printf '%-24s  %-16s  %-10s\n' "Run ID" "Status" "Profile"
+    while IFS= read -r path; do
+        [[ -f "$path/status.env" ]] || continue
+        found=1
+        id="${path##*/}"
+        status="$(awk -F= '$1 == "status" {print $2}' "$path/status.env")"
+        profile="$(awk -F= '$1 == "profile" {print $2}' "$path/status.env")"
+        printf '%-24s  %-16s  %-10s\n' "$id" "$status" "$profile"
+    done < <(list_directories "$TRANSACTIONS_DIR")
+    [[ "$found" -eq 1 ]] || echo "No convergence transactions found."
+}
+
+print_transaction_rollbacks() {
+    local path id files found=0
+
+    echo
+    echo "Transaction rollback backups"
+    printf '%-46s  %6s\n' "Rollback ID" "Files"
+    while IFS= read -r path; do
+        [[ -d "$path/backups" ]] || continue
+        found=1
+        id="${path##*/}"
+        files="$(find "$path/backups" \( -type f -o -type l \) | wc -l | tr -d ' ')"
+        printf '%-46s  %6s\n' "$id" "$files"
+    done < <(list_directories "$TRANSACTION_ROLLBACK_DIR")
+    [[ "$found" -eq 1 ]] || echo "No transaction rollback backups found."
+}
+
 prune_directory() {
     local root="$1"
     local index=0 path
@@ -149,13 +187,18 @@ prune_directory() {
 }
 
 prune_history() {
-    local safe_count rollback_count safe_remove rollback_remove total_remove
+    local safe_count rollback_count transaction_count transaction_rollback_count
+    local safe_remove rollback_remove transaction_remove transaction_rollback_remove total_remove
 
     safe_count="$(directory_count "$SAFE_UPDATE_DIR")"
     rollback_count="$(directory_count "$ROLLBACK_DIR")"
+    transaction_count="$(directory_count "$TRANSACTIONS_DIR")"
+    transaction_rollback_count="$(directory_count "$TRANSACTION_ROLLBACK_DIR")"
     safe_remove=$((safe_count > KEEP ? safe_count - KEEP : 0))
     rollback_remove=$((rollback_count > KEEP ? rollback_count - KEEP : 0))
-    total_remove=$((safe_remove + rollback_remove))
+    transaction_remove=$((transaction_count > KEEP ? transaction_count - KEEP : 0))
+    transaction_rollback_remove=$((transaction_rollback_count > KEEP ? transaction_rollback_count - KEEP : 0))
+    total_remove=$((safe_remove + rollback_remove + transaction_remove + transaction_rollback_remove))
 
     echo
     if [[ "$total_remove" -eq 0 ]]; then
@@ -163,7 +206,7 @@ prune_history() {
         return
     fi
 
-    echo "Prune plan: $safe_remove safe-update run(s), $rollback_remove rollback backup(s)."
+    echo "Prune plan: $safe_remove safe-update run(s), $rollback_remove rollback backup(s), $transaction_remove convergence transaction(s), $transaction_rollback_remove transaction rollback backup(s)."
     if [[ "$ASSUME_YES" -ne 1 ]]; then
         if [[ ! -t 0 ]]; then
             echo "Interactive confirmation required; rerun with --yes." >&2
@@ -172,19 +215,26 @@ prune_history() {
         printf "Keep the newest %d entries of each type and delete the rest? [y/N] " "$KEEP"
         IFS= read -r answer
         case "$answer" in
-            y|Y|yes|YES) ;;
-            *) echo "Prune cancelled."; return ;;
+            y | Y | yes | YES) ;;
+            *)
+                echo "Prune cancelled."
+                return
+                ;;
         esac
     fi
 
     prune_directory "$SAFE_UPDATE_DIR"
     prune_directory "$ROLLBACK_DIR"
+    prune_directory "$TRANSACTIONS_DIR"
+    prune_directory "$TRANSACTION_ROLLBACK_DIR"
 }
 
 echo "🕘 mac-dotfiles history"
 echo "========================"
 print_safe_updates
 print_rollbacks
+print_transactions
+print_transaction_rollbacks
 
 if [[ "$PRUNE" -eq 1 ]]; then
     prune_history

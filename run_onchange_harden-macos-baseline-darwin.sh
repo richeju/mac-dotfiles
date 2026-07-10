@@ -2,12 +2,17 @@
 
 set -euo pipefail
 
+if [[ "${MAC_DOTFILES_ORCHESTRATED:-0}" == "1" ]]; then
+    echo "ℹ️ Hardening defaults skipped during transactional convergence."
+    exit 0
+fi
+
 echo "🔒 Applying macOS hardening baseline (NIST-inspired)..."
 
 safe_defaults_write() {
-  if ! defaults write "$@" >/dev/null 2>&1; then
-    echo "⚠️ Skipping unsupported preference: defaults write $*"
-  fi
+    if ! defaults write "$@" >/dev/null 2>&1; then
+        echo "⚠️ Skipping unsupported preference: defaults write $*"
+    fi
 }
 
 # Require password immediately after sleep or screen saver.
@@ -36,31 +41,31 @@ safe_defaults_write com.apple.Safari SuppressSearchSuggestions -bool true
 
 # Apply AC-only power/network hardening when supported.
 if command -v pmset >/dev/null 2>&1; then
-  if sudo -n true >/dev/null 2>&1; then
-    pmset_caps="$(pmset -g cap 2>/dev/null || true)"
+    if sudo -n true >/dev/null 2>&1; then
+        pmset_caps="$(pmset -g cap 2>/dev/null || true)"
 
-    # Disable Power Nap on AC power.
-    if grep -q " powernap" <<<"$pmset_caps"; then
-      sudo pmset -c powernap 0
+        # Disable Power Nap on AC power.
+        if grep -q " powernap" <<<"$pmset_caps"; then
+            sudo pmset -c powernap 0
 
-      # Optionally disable Power Nap on battery power.
-      if [[ "${HARDEN_DISABLE_POWERNAP_ON_BATTERY:-0}" == "1" ]]; then
-        sudo pmset -b powernap 0
-      fi
+            # Optionally disable Power Nap on battery power.
+            if [[ "${HARDEN_DISABLE_POWERNAP_ON_BATTERY:-0}" == "1" ]]; then
+                sudo pmset -b powernap 0
+            fi
+        fi
+
+        # Disable wake on network access on AC power.
+        if grep -q " womp" <<<"$pmset_caps"; then
+            sudo pmset -c womp 0
+        fi
+
+        # Disable proximity wake (e.g. nearby devices) on AC power.
+        if grep -q " proximitywake" <<<"$pmset_caps"; then
+            sudo pmset -c proximitywake 0
+        fi
+    else
+        echo "⚠️ Skipping AC power hardening: sudo credentials are required."
     fi
-
-    # Disable wake on network access on AC power.
-    if grep -q " womp" <<<"$pmset_caps"; then
-      sudo pmset -c womp 0
-    fi
-
-    # Disable proximity wake (e.g. nearby devices) on AC power.
-    if grep -q " proximitywake" <<<"$pmset_caps"; then
-      sudo pmset -c proximitywake 0
-    fi
-  else
-    echo "⚠️ Skipping AC power hardening: sudo credentials are required."
-  fi
 fi
 
 # Apply Finder-related changes.

@@ -35,6 +35,14 @@ curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.s
 
 Minimal mode installs/applies the core dotfiles flow but skips the full Homebrew bundle during the chezmoi run. Later, run `mac-dotfiles.sh repair` to install and reconcile all packages.
 
+Select a persistent machine profile during bootstrap:
+```bash
+curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | \
+  bash -s -- --profile developer
+```
+
+Profiles and `--minimal` are intentionally different: `--minimal` skips package installation once, while `--profile minimal` defines the persistent desired package set for that Mac.
+
 Verification mode (no changes, no sudo prompt):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash -s -- --verify
@@ -82,6 +90,43 @@ Some macOS apps can still require manual approval or an administrator password d
 - **ripgrep**, **yq**, and **zoxide**: search, YAML, and navigation helpers
 - **shellcheck** and **shfmt**: shell quality tooling
 - **Node.js 24**: pinned LTS JavaScript runtime
+
+## 🧭 Declarative Profiles and Convergence
+
+The active profile is stored per Mac in the chezmoi configuration. Available profiles are:
+
+- `minimal`: bootstrap essentials only
+- `personal`: personal applications and power-user CLI tools
+- `developer`: personal profile plus Go and Python toolchains
+- `gaming`: personal profile plus Discord and GeForce NOW
+- `full`: the complete current setup; this is the backward-compatible default
+
+Changing a profile only changes the desired state. It never installs or removes anything immediately:
+
+```bash
+mac-dotfiles.sh profile list
+mac-dotfiles.sh profile set developer
+mac-dotfiles.sh plan
+```
+
+Inspect and apply the desired state:
+
+```bash
+mac-dotfiles.sh plan                 # read-only; always exits 0 when inspection succeeds
+mac-dotfiles.sh plan --json          # strict machine-readable plan
+mac-dotfiles.sh drift                # 0=clean, 1=drift, 2=inspection error
+mac-dotfiles.sh converge --dry-run   # plan alias
+mac-dotfiles.sh converge             # confirmed transactional apply
+mac-dotfiles.sh converge --yes       # unattended apply
+```
+
+Each convergence creates a versioned transaction under `~/.local/state/mac-dotfiles/transactions/`. It snapshots all managed files and symlinks, the chezmoi configuration, direct Homebrew formulae, and installed casks. Blocking validation checks dotfile convergence, Homebrew dependencies, and the LaunchAgent plist.
+
+If an apply or validation step fails, managed files are restored automatically, files created by the failed apply are removed, newly installed direct formulae/casks are removed on a best-effort basis, and the transaction is marked `rolled_back` or `rollback_failed`. Homebrew cannot restore older package versions or application data, so package rollback is deliberately described as best effort.
+
+Manual transaction rollback first preserves the current files under `~/.local/state/mac-dotfiles/transaction-rollback-backups/`, then restores the selected snapshot. It deliberately leaves Homebrew packages untouched to avoid removing software installed legitimately after an older transaction.
+
+Manual security items such as FileVault, firewall, Time Machine, and macOS updates remain advisory and never trigger a convergence rollback.
 
 ## ⚙️ Automatic Configurations
 
@@ -183,6 +228,10 @@ The launcher provides a compact numbered menu for common actions:
 - run doctor
 - run maintenance
 - show `chezmoi diff`
+- inspect or select the active profile
+- preview desired-state drift
+- run a transactional convergence
+- inspect and restore convergence transactions
 
 You can also call commands directly:
 ```bash
@@ -194,9 +243,15 @@ mac-dotfiles.sh history
 mac-dotfiles.sh report
 mac-dotfiles.sh doctor
 mac-dotfiles.sh explain
+mac-dotfiles.sh profile current
+mac-dotfiles.sh plan
+mac-dotfiles.sh drift
+mac-dotfiles.sh converge
+mac-dotfiles.sh transactions
+mac-dotfiles.sh tx-rollback latest --yes
 ```
 
-Use `mac-dotfiles.sh repair` after the initial install whenever you want to put the Mac back into the expected state. It applies the latest dotfiles, reconciles the global Brewfile, runs doctor auto-fixes, and writes `~/mac-dotfiles-repair-report.md`.
+Use `mac-dotfiles.sh repair` after the initial install whenever you want to put the Mac back into the expected state. It fast-forwards the desired-state source, runs a confirmed transactional convergence, applies safe doctor auto-fixes, and writes `~/mac-dotfiles-repair-report.md`.
 
 #### Edit configuration files
 ```bash
@@ -272,23 +327,24 @@ chezmoi update --apply
 
 ### Adding Applications
 
-Edit `dot_Brewfile` on GitHub or locally:
+Edit the appropriate fragment under `profiles/` on GitHub or locally. For example:
 ```bash
-chezmoi edit ~/.Brewfile
+$EDITOR ~/.local/share/chezmoi/profiles/personal.Brewfile
 ```
 
-Then update:
+Then preview and converge:
 ```bash
-chezmoi update --apply
+mac-dotfiles.sh plan
+mac-dotfiles.sh converge
 ```
 
-Applications will be automatically installed!
+The generated `~/.Brewfile` should not be edited directly.
 
 ## 📁 Repository Structure
 
 ### Brewfile Strategy
 
-This repository uses one canonical Homebrew manifest: `dot_Brewfile`, rendered by chezmoi to `~/.Brewfile`.
+This repository uses one canonical Homebrew template: `dot_Brewfile.tmpl`, composed from declarative fragments under `profiles/` and rendered by chezmoi to `~/.Brewfile`.
 
 The `run_onchange_install-packages-darwin.sh.tmpl` script installs from `~/.Brewfile` using:
 
@@ -296,7 +352,8 @@ The `run_onchange_install-packages-darwin.sh.tmpl` script installs from `~/.Brew
 brew bundle --global --verbose
 ```
 
-- `dot_Brewfile` - Rendered to `~/.Brewfile`, used by `brew bundle --global`
+- `dot_Brewfile.tmpl` - Profile-aware template rendered to `~/.Brewfile`
+- `profiles/*.Brewfile` - Composable desired package sets
 - `dot_gitconfig.tmpl` - Git configuration template
 - `dot_zprofile` - Shell profile that enables Homebrew and `~/.local/bin`
 - `install.sh` - Initial installation script
@@ -304,7 +361,8 @@ brew bundle --global --verbose
 - `lib/doctor_output.sh` - JSON, Markdown, and explanation renderers used by the health check
 - `tests/test_suite.sh` - Syntax validation and entry point for the complete shell test suite
 - `dot_local/bin/executable_mac-dotfiles.sh.tmpl` - Compact launcher/menu for common workflows
-- `run_once_configure-dock-darwin.sh` - Dock configuration (runs once)
+- `dot_local/bin/executable_mac-dotfiles-converge.sh.tmpl` - Profile, plan, drift, transaction, validation, and rollback engine
+- `run_onchange_configure-dock-darwin.sh.tmpl` - Dock configuration reapplied when its desired values change
 - `run_onchange_configure-finder-and-inputs-darwin.sh` - Finder and input comfort defaults, reapplied when the baseline changes
 - `run_onchange_harden-macos-baseline-darwin.sh` - macOS hardening baseline, reapplied when the baseline changes
 - `run_onchange_install-packages-darwin.sh.tmpl` - Package installer (runs when Brewfile changes)

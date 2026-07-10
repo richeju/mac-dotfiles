@@ -72,6 +72,15 @@ HISTORY
 echo "maintenance-called"
 MAINT
 
+    cat >"$env_dir/home/.local/bin/mac-dotfiles-converge.sh" <<'CONVERGE'
+#!/usr/bin/env bash
+printf 'converge-engine'
+for arg in "$@"; do
+  printf ' %s' "$arg"
+done
+printf '\n'
+CONVERGE
+
     cat >"$env_dir/bin/chezmoi" <<'CHEZ'
 #!/usr/bin/env bash
 if [[ "$1" == "update" ]]; then
@@ -80,6 +89,8 @@ if [[ "$1" == "update" ]]; then
     printf ' %s' "$arg"
   done
   printf '\n'
+elif [[ "$1" == "git" && "$2" == "pull" ]]; then
+  printf 'chezmoi git pull -- --ff-only\n'
 elif [[ "$1" == "diff" ]]; then
   echo "diff-called"
 fi
@@ -104,6 +115,7 @@ BREW
         "$env_dir/home/.local/bin/mac-dotfiles-rollback.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-history.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh" \
+        "$env_dir/home/.local/bin/mac-dotfiles-converge.sh" \
         "$env_dir/bin/chezmoi" \
         "$env_dir/bin/brew"
 
@@ -144,8 +156,8 @@ test_direct_commands() {
 
     report_path="$env_dir/home/repair-report.md"
     output="$(run_launcher "$env_dir" repair "$report_path")"
-    assert_contains "$output" "chezmoi update --apply --force --no-tty" "repair should force a non-interactive chezmoi update"
-    assert_contains "$output" "brew bundle --global --verbose" "repair should reconcile the global Brewfile"
+    assert_contains "$output" "chezmoi git pull -- --ff-only" "repair should update the desired-state source"
+    assert_contains "$output" "converge-engine converge --yes" "repair should use transactional convergence"
     assert_contains "$output" "doctor-fix-called" "repair should run doctor --fix"
     assert_contains "$output" "Report written to $report_path" "repair should write a report"
     assert_contains "$(cat "$report_path")" "report-called" "repair report should contain report output"
@@ -157,6 +169,18 @@ test_direct_commands() {
     output="$(run_launcher "$env_dir" report "$report_path")"
     assert_contains "$output" "Report written to $report_path" "report command should print destination"
     assert_contains "$(cat "$report_path")" "report-called" "report command should write report content"
+
+    output="$(run_launcher "$env_dir" profile set developer)"
+    assert_contains "$output" "converge-engine profile set developer" "profile command should route to convergence engine"
+
+    output="$(run_launcher "$env_dir" plan --profile gaming)"
+    assert_contains "$output" "converge-engine plan --profile gaming" "plan should forward options"
+
+    output="$(run_launcher "$env_dir" converge --yes)"
+    assert_contains "$output" "converge-engine converge --yes" "converge should forward confirmation"
+
+    output="$(run_launcher "$env_dir" tx-rollback latest --yes)"
+    assert_contains "$output" "converge-engine rollback latest --yes" "transaction rollback should route correctly"
 }
 
 test_menu_exit() {
