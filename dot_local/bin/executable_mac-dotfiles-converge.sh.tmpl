@@ -705,7 +705,9 @@ converge_command() {
         write_status "success"
         TRANSACTION_ACTIVE=0
         chezmoi diff >"$RUN_DIR/chezmoi-after.diff" 2>&1 || true
-        [[ -x "$REPORT_SCRIPT" ]] && "$REPORT_SCRIPT" >"$RUN_DIR/report-after.md" || true
+        if [[ -x "$REPORT_SCRIPT" ]]; then
+            "$REPORT_SCRIPT" >"$RUN_DIR/report-after.md" || true
+        fi
         echo
         echo "✅ Convergence completed"
         echo "Transaction: $RUN_ID"
