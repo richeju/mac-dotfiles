@@ -1,5 +1,8 @@
 # Homebrew
 eval "$(/opt/homebrew/bin/brew shellenv)"
 
+# Homebrew versioned Node LTS is keg-only.
+export PATH="/opt/homebrew/opt/node@24/bin:$PATH"
+
 # User-local scripts
 export PATH="$HOME/.local/bin:$PATH"

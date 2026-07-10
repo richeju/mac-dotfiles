@@ -14,5 +14,33 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install shell quality tools
+        run: sudo apt-get update && sudo apt-get install -y shellcheck shfmt
+
       - name: Validate scripts and run test suites
         run: bash tests/test_suite.sh
+
+      - name: Run ShellCheck
+        run: shellcheck doctor.sh install.sh lib/*.sh tests/*.sh
+
+      - name: Check shell formatting
+        run: shfmt -d -i 4 -ci doctor.sh install.sh lib/*.sh tests/*.sh
+
+  macos-validation:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate shell behavior
+        run: bash tests/test_suite.sh
+
+      - name: Validate rendered LaunchAgent plist
+        run: |
+          sed \
+            -e '/{{-.*-}}/d' \
+            -e 's/{{ .chezmoi.homeDir }}/\/Users\/runner/g' \
+            -e 's/{{ $hour }}/4/g' \
+            -e 's/{{ $minute }}/0/g' \
+            dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl > /tmp/maintenance.plist
+          plutil -lint /tmp/maintenance.plist

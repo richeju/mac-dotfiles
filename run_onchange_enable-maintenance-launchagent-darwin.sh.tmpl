@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# Reload when the managed LaunchAgent definition changes.
+# Hash: {{ include "dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl" | sha256sum }}
+set -euo pipefail
+
+PLIST="$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist"
+SERVICE="gui/$(id -u)/com.chezmoi.mac-dotfiles.maintenance"
+
+if [[ ! -f "$PLIST" ]]; then
+    echo "❌ LaunchAgent plist is missing: $PLIST"
+    exit 1
+fi
+
+plutil -lint "$PLIST"
+
+echo "🤖 Loading daily maintenance LaunchAgent..."
+launchctl bootout "$SERVICE" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$PLIST"
+launchctl enable "$SERVICE"
+
+echo "✅ LaunchAgent enabled: com.chezmoi.mac-dotfiles.maintenance"
+echo "   Schedule: every day at 04:00"

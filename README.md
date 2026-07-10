@@ -60,14 +60,10 @@ Some macOS apps can still require manual approval or an administrator password d
 
 ## 📦 What Gets Installed
 
-### Essential Tools
+### Bootstrap Tools
 - **Homebrew**: macOS package manager
-- **chezmoi**: Dotfiles manager
-- **Git**: version control system
-- **wget**: file downloader
-- **curl**: data transfer tool
-- **vim**: text editor
-- **zsh**: modern shell
+- **chezmoi**: dotfiles manager
+- **Git**, **curl**, and **zsh**: macOS bootstrap tools
 
 ### Applications (via Brewfile)
 - **VLC**: Media player
@@ -83,6 +79,9 @@ Some macOS apps can still require manual approval or an administrator password d
 - **htop**: interactive process viewer
 - **bat**: improved cat with syntax highlighting
 - **fzf**: fuzzy finder
+- **ripgrep**, **yq**, and **zoxide**: search, YAML, and navigation helpers
+- **shellcheck** and **shfmt**: shell quality tooling
+- **Node.js 24**: pinned LTS JavaScript runtime
 
 ## ⚙️ Automatic Configurations
 
@@ -119,7 +118,7 @@ Automatically configured on first run:
 - Tap-to-click enabled for trackpads
 
 ### macOS Hardening Baseline
-Automatically applied once (via chezmoi `run_once_*`) with practical, low-friction hardening defaults:
+Applied on install and again whenever the managed baseline changes, with practical, low-friction hardening defaults:
 - Require password immediately after sleep/screensaver lock
 - Always show filename extensions
 - Show hidden files in Finder
@@ -139,7 +138,7 @@ Daily automatic tasks (via macOS LaunchAgent):
 - Cleanup old versions
 - System diagnostics
 - Cache statistics
-- Scheduled every day at 04:00 + at login
+- Scheduled every day at 04:00
 
 You can disable the automatic dotfiles sync by setting `AUTO_CHEZMOI_UPDATE=0` before running the maintenance script manually.
 
@@ -232,7 +231,7 @@ Optional modes:
 ./doctor.sh --explain  # explain warnings and suggest next commands
 ```
 
-The doctor script validates core dependencies (`git`, `curl`, `brew`, `chezmoi`), checks minimum versions for `git` and `chezmoi`, verifies Homebrew bundle status, confirms whether there are pending chezmoi changes, and detects broken symlinks for key managed files.
+The doctor script validates core dependencies, versions, Homebrew bundle status, pending chezmoi changes, managed symlinks, FileVault, firewall, Gatekeeper, Time Machine, macOS updates, and scheduled maintenance health. `--json` emits one strict JSON document suitable for `jq` and CI.
 
 When run outside macOS (for example in Linux CI or a dev container), `doctor.sh` reports warnings for the platform and missing macOS tools (`brew`, `chezmoi`) by design.
 
@@ -289,10 +288,7 @@ Applications will be automatically installed!
 
 ### Brewfile Strategy
 
-This repository uses two Homebrew manifests for different purposes:
-
-- `Brewfile`: a repo-level list for bootstrap/development references.
-- `dot_Brewfile`: the user-level list rendered by chezmoi to `~/.Brewfile`.
+This repository uses one canonical Homebrew manifest: `dot_Brewfile`, rendered by chezmoi to `~/.Brewfile`.
 
 The `run_onchange_install-packages-darwin.sh.tmpl` script installs from `~/.Brewfile` using:
 
@@ -300,7 +296,6 @@ The `run_onchange_install-packages-darwin.sh.tmpl` script installs from `~/.Brew
 brew bundle --global --verbose
 ```
 
-- `Brewfile` - Bootstrap/development packages tracked in the repo
 - `dot_Brewfile` - Rendered to `~/.Brewfile`, used by `brew bundle --global`
 - `dot_gitconfig.tmpl` - Git configuration template
 - `dot_zprofile` - Shell profile that enables Homebrew and `~/.local/bin`
@@ -310,8 +305,8 @@ brew bundle --global --verbose
 - `tests/test_suite.sh` - Syntax validation and entry point for the complete shell test suite
 - `dot_local/bin/executable_mac-dotfiles.sh.tmpl` - Compact launcher/menu for common workflows
 - `run_once_configure-dock-darwin.sh` - Dock configuration (runs once)
-- `run_once_configure-finder-and-inputs-darwin.sh` - Finder and input comfort defaults (runs once)
-- `run_once_harden-macos-baseline-darwin.sh` - Applies a one-time macOS hardening baseline
+- `run_onchange_configure-finder-and-inputs-darwin.sh` - Finder and input comfort defaults, reapplied when the baseline changes
+- `run_onchange_harden-macos-baseline-darwin.sh` - macOS hardening baseline, reapplied when the baseline changes
 - `run_onchange_install-packages-darwin.sh.tmpl` - Package installer (runs when Brewfile changes)
 - `run_onchange_update-and-cleanup-darwin.sh.tmpl` - Maintenance script triggered when template changes
 - `dot_local/bin/executable_mac-dotfiles-maintenance.sh.tmpl` - Daily maintenance runner written to `~/.local/bin`
@@ -320,8 +315,8 @@ brew bundle --global --verbose
 - `dot_local/bin/executable_mac-dotfiles-safe-update.sh.tmpl` - Safe update wrapper with before/after reports, backups, and saved diff
 - `dot_local/bin/executable_mac-dotfiles-rollback.sh.tmpl` - Confirmed or dry-run restoration from safe-update backups
 - `dot_local/bin/executable_mac-dotfiles-history.sh.tmpl` - Backup history listing and retention cleanup
-- `dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl` - LaunchAgent scheduled at 04:00 + run at login
-- `run_once_enable-maintenance-launchagent-darwin.sh.tmpl` - Loads/enables the LaunchAgent automatically
+- `dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl` - LaunchAgent scheduled daily at 04:00
+- `run_onchange_enable-maintenance-launchagent-darwin.sh.tmpl` - Validates and reloads the LaunchAgent whenever its definition changes
 
 
 ## 🤖 Codex Skill (Automation)
