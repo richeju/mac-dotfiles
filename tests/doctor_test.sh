@@ -33,7 +33,11 @@ run_doctor() {
   shift
   set +e
   local output
-  output="$(HOME="$env_dir/home" PATH="$env_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin" OSTYPE="$os_type" bash "$DOCTOR_SCRIPT" "$@" 2>&1)"
+  output="$(
+    cd "$env_dir"
+    HOME="$env_dir/home" PATH="$env_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+      OSTYPE="$os_type" bash "$DOCTOR_SCRIPT" "$@" 2>&1
+  )"
   local status=$?
   set -e
   printf '%s\n__EXIT_STATUS__=%s\n' "$output" "$status"
