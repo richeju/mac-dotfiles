@@ -40,16 +40,22 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --git-name)
-            [[ $# -lt 2 ]] && { echo "Missing value for --git-name"; exit 1; }
+            [[ $# -lt 2 ]] && {
+                echo "Missing value for --git-name"
+                exit 1
+            }
             GIT_NAME="$2"
             shift 2
             ;;
         --git-email)
-            [[ $# -lt 2 ]] && { echo "Missing value for --git-email"; exit 1; }
+            [[ $# -lt 2 ]] && {
+                echo "Missing value for --git-email"
+                exit 1
+            }
             GIT_EMAIL="$2"
             shift 2
             ;;
-        -h|--help)
+        -h | --help)
             usage
             exit 0
             ;;
@@ -78,12 +84,15 @@ NC='\033[0m' # No Color
 
 log_info() { echo -e "${GREEN}✓${NC} $1"; }
 log_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
-log_error() { echo -e "${RED}✗${NC} $1"; exit 1; }
+log_error() {
+    echo -e "${RED}✗${NC} $1"
+    exit 1
+}
 DOTFILES_APPLIED="false"
 VERIFY_WARNINGS=0
 
 require_command() {
-    if ! command -v "$1" &> /dev/null; then
+    if ! command -v "$1" &>/dev/null; then
         log_error "Required command '$1' is missing"
     fi
 }
@@ -126,7 +135,7 @@ ensure_zprofile_line() {
     local line="$1"
 
     if [[ ! -f "$HOME/.zprofile" ]] || ! grep -Fqx "$line" "$HOME/.zprofile"; then
-        echo "$line" >> "$HOME/.zprofile"
+        echo "$line" >>"$HOME/.zprofile"
     fi
 }
 
@@ -240,7 +249,11 @@ fi
 
 SUDO_KEEPALIVE_PID=""
 start_sudo_keepalive() {
-    while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+    while true; do
+        sudo -n true
+        sleep 60
+        kill -0 "$$" || exit
+    done 2>/dev/null &
     SUDO_KEEPALIVE_PID=$!
 }
 
@@ -364,7 +377,7 @@ require_command curl
 ensure_brew_in_path
 
 # Install Homebrew
-if ! command -v brew &> /dev/null; then
+if ! command -v brew &>/dev/null; then
     log_info "Installing Homebrew..."
     ensure_sudo_for_homebrew_install
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"

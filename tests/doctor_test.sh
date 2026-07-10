@@ -1,60 +1,63 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # Markdown expectations intentionally contain backticks.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOCTOR_SCRIPT="$REPO_ROOT/doctor.sh"
 
 fail() {
-  echo "[FAIL] $1" >&2
-  exit 1
+    echo "[FAIL] $1" >&2
+    exit 1
 }
 
 assert_contains() {
-  local haystack="$1"
-  local needle="$2"
-  local message="$3"
-  [[ "$haystack" == *"$needle"* ]] || fail "$message (missing: $needle)"
+    local haystack="$1"
+    local needle="$2"
+    local message="$3"
+    [[ "$haystack" == *"$needle"* ]] || fail "$message (missing: $needle)"
 }
 
 assert_exit_code() {
-  local actual="$1"
-  local expected="$2"
-  local message="$3"
-  [[ "$actual" -eq "$expected" ]] || fail "$message (expected $expected got $actual)"
+    local actual="$1"
+    local expected="$2"
+    local message="$3"
+    [[ "$actual" -eq "$expected" ]] || fail "$message (expected $expected got $actual)"
 }
 
 run_doctor() {
-  local env_dir="$1"
-  local os_type="darwin23"
-  if [[ $# -gt 1 && "${2}" != --* ]]; then
-    os_type="$2"
+    local env_dir="$1"
+    local os_type="darwin23"
+    if [[ $# -gt 1 && "${2}" != --* ]]; then
+        os_type="$2"
+        shift
+    fi
     shift
-  fi
-  shift
-  set +e
-  local output
-  output="$(
-    cd "$env_dir"
-    HOME="$env_dir/home" PATH="$env_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
-      OSTYPE="$os_type" bash "$DOCTOR_SCRIPT" "$@" 2>&1
-  )"
-  local status=$?
-  set -e
-  printf '%s\n__EXIT_STATUS__=%s\n' "$output" "$status"
+    set +e
+    local output
+    output="$(
+        cd "$env_dir"
+        HOME="$env_dir/home" PATH="$env_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+            MAC_DOTFILES_FIREWALL_CMD="$env_dir/bin/socketfilterfw" \
+            OSTYPE="$os_type" bash "$DOCTOR_SCRIPT" "$@" 2>&1
+    )"
+    local status=$?
+    set -e
+    printf '%s\n__EXIT_STATUS__=%s\n' "$output" "$status"
 }
 
 setup_env() {
-  local env_dir
-  env_dir="$(mktemp -d)"
-  mkdir -p "$env_dir/bin" "$env_dir/home/.local/bin"
-  touch "$env_dir/home/.Brewfile" "$env_dir/home/.gitconfig" "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh"
-  echo "$env_dir"
+    local env_dir
+    env_dir="$(mktemp -d)"
+    mkdir -p "$env_dir/bin" "$env_dir/home/.local/bin" "$env_dir/home/.local/state/mac-dotfiles"
+    touch "$env_dir/home/.Brewfile" "$env_dir/home/.gitconfig" "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh"
+    echo "✅ Maintenance completed" >"$env_dir/home/.local/state/mac-dotfiles/maintenance.log"
+    echo "$env_dir"
 }
 
 write_common_mocks() {
-  local env_dir="$1"
+    local env_dir="$1"
 
-  cat > "$env_dir/bin/git" <<'GIT'
+    cat >"$env_dir/bin/git" <<'GIT'
 #!/usr/bin/env bash
 if [[ "$1" == "--version" ]]; then
   echo "git version 2.45.1"
@@ -63,12 +66,12 @@ fi
 exit 0
 GIT
 
-  cat > "$env_dir/bin/curl" <<'CURL'
+    cat >"$env_dir/bin/curl" <<'CURL'
 #!/usr/bin/env bash
 exit 0
 CURL
 
-  cat > "$env_dir/bin/brew" <<'BREW'
+    cat >"$env_dir/bin/brew" <<'BREW'
 #!/usr/bin/env bash
 if [[ "$1" == "bundle" && "$2" == "check" ]]; then
   exit 0
@@ -79,7 +82,7 @@ fi
 exit 0
 BREW
 
-  cat > "$env_dir/bin/chezmoi" <<'CHEZ'
+    cat >"$env_dir/bin/chezmoi" <<'CHEZ'
 #!/usr/bin/env bash
 if [[ "$1" == "--version" ]]; then
   echo "chezmoi version v2.55.0"
@@ -94,84 +97,110 @@ fi
 exit 0
 CHEZ
 
-  chmod +x "$env_dir/bin/git" "$env_dir/bin/curl" "$env_dir/bin/brew" "$env_dir/bin/chezmoi"
+    cat >"$env_dir/bin/fdesetup" <<'MOCK'
+#!/usr/bin/env bash
+echo "FileVault is On."
+MOCK
+    cat >"$env_dir/bin/socketfilterfw" <<'MOCK'
+#!/usr/bin/env bash
+echo "Firewall is enabled. (State = 1)"
+MOCK
+    cat >"$env_dir/bin/spctl" <<'MOCK'
+#!/usr/bin/env bash
+echo "assessments enabled"
+MOCK
+    cat >"$env_dir/bin/tmutil" <<'MOCK'
+#!/usr/bin/env bash
+echo "Name : Backup"
+MOCK
+    cat >"$env_dir/bin/softwareupdate" <<'MOCK'
+#!/usr/bin/env bash
+echo "No new software available."
+MOCK
+    cat >"$env_dir/bin/launchctl" <<'MOCK'
+#!/usr/bin/env bash
+exit 0
+MOCK
+
+    chmod +x "$env_dir/bin/"*
 }
 
 parse_status() {
-  local run_output="$1"
-  echo "$run_output" | awk -F= '/__EXIT_STATUS__/ {print $2}' | tail -n1
+    local run_output="$1"
+    echo "$run_output" | awk -F= '/__EXIT_STATUS__/ {print $2}' | tail -n1
 }
 
 strip_status_line() {
-  local run_output="$1"
-  echo "$run_output" | sed '/__EXIT_STATUS__/d'
+    local run_output="$1"
+    echo "$run_output" | sed '/__EXIT_STATUS__/d'
 }
 
 test_help() {
-  local env_dir
-  env_dir="$(setup_env)"
-  write_common_mocks "$env_dir"
+    local env_dir
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
 
-  local run_output status output
-  run_output="$(run_doctor "$env_dir" --help)"
-  status="$(parse_status "$run_output")"
-  output="$(strip_status_line "$run_output")"
+    local run_output status output
+    run_output="$(run_doctor "$env_dir" --help)"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
 
-  assert_exit_code "$status" 0 "doctor --help should exit successfully"
-  assert_contains "$output" "Usage: ./doctor.sh" "doctor --help should print usage"
+    assert_exit_code "$status" 0 "doctor --help should exit successfully"
+    assert_contains "$output" "Usage: ./doctor.sh" "doctor --help should print usage"
 }
 
 test_happy_path_json() {
-  local env_dir
-  env_dir="$(setup_env)"
-  write_common_mocks "$env_dir"
+    local env_dir
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
 
-  local run_output status output
-  run_output="$(run_doctor "$env_dir" --json)"
-  status="$(parse_status "$run_output")"
-  output="$(strip_status_line "$run_output")"
+    local run_output status output
+    run_output="$(run_doctor "$env_dir" --json)"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
 
-  assert_exit_code "$status" 0 "doctor --json happy path should exit successfully"
-  assert_contains "$output" '"overall": "ok"' "JSON summary should report overall ok"
-  assert_contains "$output" '"name": "platform", "status": "ok"' "JSON summary should include platform check"
+    assert_exit_code "$status" 0 "doctor --json happy path should exit successfully"
+    assert_contains "$output" '"overall": "ok"' "JSON summary should report overall ok"
+    assert_contains "$output" '"name": "platform", "status": "ok"' "JSON summary should include platform check"
+    printf '%s' "$output" | python3 -m json.tool >/dev/null || fail "doctor --json should emit a single valid JSON document"
 }
 
 test_happy_path_markdown() {
-  local env_dir
-  env_dir="$(setup_env)"
-  write_common_mocks "$env_dir"
+    local env_dir
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
 
-  local run_output status output
-  run_output="$(run_doctor "$env_dir" --markdown)"
-  status="$(parse_status "$run_output")"
-  output="$(strip_status_line "$run_output")"
+    local run_output status output
+    run_output="$(run_doctor "$env_dir" --markdown)"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
 
-  assert_exit_code "$status" 0 "doctor --markdown happy path should exit successfully"
-  assert_contains "$output" "## mac-dotfiles doctor report" "Markdown summary should include title"
-  assert_contains "$output" '| `platform` | ✅ ok | Running on macOS |' "Markdown summary should include platform check"
+    assert_exit_code "$status" 0 "doctor --markdown happy path should exit successfully"
+    assert_contains "$output" "## mac-dotfiles doctor report" "Markdown summary should include title"
+    assert_contains "$output" '| `platform` | ✅ ok | Running on macOS |' "Markdown summary should include platform check"
 }
 
 test_explain_happy_path() {
-  local env_dir
-  env_dir="$(setup_env)"
-  write_common_mocks "$env_dir"
+    local env_dir
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
 
-  local run_output status output
-  run_output="$(run_doctor "$env_dir" --explain)"
-  status="$(parse_status "$run_output")"
-  output="$(strip_status_line "$run_output")"
+    local run_output status output
+    run_output="$(run_doctor "$env_dir" --explain)"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
 
-  assert_exit_code "$status" 0 "doctor --explain happy path should exit successfully"
-  assert_contains "$output" "## Explanation" "doctor --explain should print explanation section"
-  assert_contains "$output" "No warnings to explain." "doctor --explain should say when no warnings exist"
+    assert_exit_code "$status" 0 "doctor --explain happy path should exit successfully"
+    assert_contains "$output" "## Explanation" "doctor --explain should print explanation section"
+    assert_contains "$output" "No warnings to explain." "doctor --explain should say when no warnings exist"
 }
 
 test_explain_warning_path() {
-  local env_dir
-  env_dir="$(setup_env)"
-  write_common_mocks "$env_dir"
+    local env_dir
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
 
-  cat > "$env_dir/bin/chezmoi" <<'CHEZ'
+    cat >"$env_dir/bin/chezmoi" <<'CHEZ'
 #!/usr/bin/env bash
 if [[ "$1" == "--version" ]]; then
   echo "chezmoi version v2.55.0"
@@ -186,68 +215,92 @@ if [[ "$1" == "apply" ]]; then
 fi
 exit 0
 CHEZ
-  chmod +x "$env_dir/bin/chezmoi"
+    chmod +x "$env_dir/bin/chezmoi"
 
-  local run_output status output
-  run_output="$(run_doctor "$env_dir" --explain)"
-  status="$(parse_status "$run_output")"
-  output="$(strip_status_line "$run_output")"
+    local run_output status output
+    run_output="$(run_doctor "$env_dir" --explain)"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
 
-  assert_exit_code "$status" 1 "doctor --explain should preserve warning exit code"
-  assert_contains "$output" "### chezmoi-diff" "doctor --explain should include warning check name"
-  assert_contains "$output" "mac-dotfiles.sh safe-update" "doctor --explain should suggest safe update"
+    assert_exit_code "$status" 1 "doctor --explain should preserve warning exit code"
+    assert_contains "$output" "### chezmoi-diff" "doctor --explain should include warning check name"
+    assert_contains "$output" "mac-dotfiles.sh safe-update" "doctor --explain should suggest safe update"
 }
 
 test_unknown_argument_returns_error() {
-  local env_dir
-  env_dir="$(setup_env)"
-  write_common_mocks "$env_dir"
+    local env_dir
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
 
-  local run_output status output
-  run_output="$(run_doctor "$env_dir" --unknown-flag)"
-  status="$(parse_status "$run_output")"
-  output="$(strip_status_line "$run_output")"
+    local run_output status output
+    run_output="$(run_doctor "$env_dir" --unknown-flag)"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
 
-  assert_exit_code "$status" 2 "doctor with unknown argument should fail with usage exit code"
-  assert_contains "$output" "Unknown argument: --unknown-flag" "Unknown argument should be reported"
+    assert_exit_code "$status" 2 "doctor with unknown argument should fail with usage exit code"
+    assert_contains "$output" "Unknown argument: --unknown-flag" "Unknown argument should be reported"
 }
 
 test_non_macos_reports_warning() {
-  local env_dir
-  env_dir="$(setup_env)"
-  write_common_mocks "$env_dir"
+    local env_dir
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
 
-  local run_output status output
-  run_output="$(run_doctor "$env_dir" linux-gnu --markdown)"
-  status="$(parse_status "$run_output")"
-  output="$(strip_status_line "$run_output")"
+    local run_output status output
+    run_output="$(run_doctor "$env_dir" linux-gnu --markdown)"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
 
-  assert_exit_code "$status" 0 "doctor on non-macOS should still complete when all checks pass"
-  assert_contains "$output" "This repository targets macOS" "non-macOS warning should be visible"
-  assert_contains "$output" '| `platform` | ⚠️ warn | Expected macOS |' "Markdown summary should include platform warning"
+    assert_exit_code "$status" 0 "doctor on non-macOS should still complete when all checks pass"
+    assert_contains "$output" "This repository targets macOS" "non-macOS warning should be visible"
+    assert_contains "$output" '| `platform` | ⚠️ warn | Expected macOS |' "Markdown summary should include platform warning"
 }
 
 test_missing_command_returns_warning_exit_code() {
-  local env_dir
-  env_dir="$(setup_env)"
-  write_common_mocks "$env_dir"
-  rm -f "$env_dir/bin/brew"
+    local env_dir
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
+    rm -f "$env_dir/bin/brew"
 
-  local run_output status output
-  run_output="$(run_doctor "$env_dir")"
-  status="$(parse_status "$run_output")"
-  output="$(strip_status_line "$run_output")"
+    local run_output status output
+    run_output="$(run_doctor "$env_dir")"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
 
-  assert_exit_code "$status" 1 "doctor should exit with warning when required command is missing"
-  assert_contains "$output" "Missing command: brew" "missing brew command should be reported"
+    assert_exit_code "$status" 1 "doctor should exit with warning when required command is missing"
+    assert_contains "$output" "Missing command: brew" "missing brew command should be reported"
+}
+
+test_macos_posture_warnings_are_structured() {
+    local env_dir run_output status output
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
+
+    cat >"$env_dir/bin/fdesetup" <<'MOCK'
+#!/usr/bin/env bash
+echo "FileVault is Off."
+MOCK
+    cat >"$env_dir/bin/tmutil" <<'MOCK'
+#!/usr/bin/env bash
+echo "tmutil: No destinations configured."
+MOCK
+    chmod +x "$env_dir/bin/fdesetup" "$env_dir/bin/tmutil"
+
+    run_output="$(run_doctor "$env_dir" --json)"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
+
+    assert_exit_code "$status" 1 "doctor should warn for an unsafe macOS posture"
+    assert_contains "$output" '"name": "security:filevault", "status": "warn"' "JSON should identify FileVault warning"
+    assert_contains "$output" '"name": "backup:time-machine", "status": "warn"' "JSON should identify Time Machine warning"
 }
 
 test_fix_mode_runs_autofix() {
-  local env_dir
-  env_dir="$(setup_env)"
-  write_common_mocks "$env_dir"
+    local env_dir
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
 
-  cat > "$env_dir/bin/brew" <<BREW
+    cat >"$env_dir/bin/brew" <<BREW
 #!/usr/bin/env bash
 state_file="$env_dir/brew.state"
 if [[ "\$1" == "bundle" && "\$2" == "check" ]]; then
@@ -264,7 +317,7 @@ fi
 exit 0
 BREW
 
-  cat > "$env_dir/bin/chezmoi" <<CHEZ
+    cat >"$env_dir/bin/chezmoi" <<CHEZ
 #!/usr/bin/env bash
 state_file="$env_dir/chezmoi.state"
 if [[ "\$1" == "--version" ]]; then
@@ -286,28 +339,28 @@ fi
 exit 0
 CHEZ
 
-  chmod +x "$env_dir/bin/brew" "$env_dir/bin/chezmoi"
+    chmod +x "$env_dir/bin/brew" "$env_dir/bin/chezmoi"
 
-  local run_output status output
-  run_output="$(run_doctor "$env_dir" --fix)"
-  status="$(parse_status "$run_output")"
-  output="$(strip_status_line "$run_output")"
+    local run_output status output
+    run_output="$(run_doctor "$env_dir" --fix)"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
 
-  assert_exit_code "$status" 0 "doctor --fix should return success when auto-fixes resolve all issues"
-  assert_contains "$output" "Applying fix: brew bundle --global --verbose" "brew autofix should be attempted"
-  assert_contains "$output" "Applying fix: chezmoi apply" "chezmoi autofix should be attempted"
-  assert_contains "$output" "Homebrew dependencies fixed successfully" "brew should be reported fixed after --fix"
-  assert_contains "$output" "Pending dotfile changes fixed successfully" "chezmoi should be reported fixed after --fix"
-  [[ -f "$env_dir/brew.log" ]] || fail "brew autofix command was not invoked"
-  [[ -f "$env_dir/chezmoi.log" ]] || fail "chezmoi autofix command was not invoked"
+    assert_exit_code "$status" 0 "doctor --fix should return success when auto-fixes resolve all issues"
+    assert_contains "$output" "Applying fix: brew bundle --global --verbose" "brew autofix should be attempted"
+    assert_contains "$output" "Applying fix: chezmoi apply" "chezmoi autofix should be attempted"
+    assert_contains "$output" "Homebrew dependencies fixed successfully" "brew should be reported fixed after --fix"
+    assert_contains "$output" "Pending dotfile changes fixed successfully" "chezmoi should be reported fixed after --fix"
+    [[ -f "$env_dir/brew.log" ]] || fail "brew autofix command was not invoked"
+    [[ -f "$env_dir/chezmoi.log" ]] || fail "chezmoi autofix command was not invoked"
 }
 
 test_fix_mode_reports_warning_when_fix_fails() {
-  local env_dir
-  env_dir="$(setup_env)"
-  write_common_mocks "$env_dir"
+    local env_dir
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
 
-  cat > "$env_dir/bin/brew" <<'BREW'
+    cat >"$env_dir/bin/brew" <<'BREW'
 #!/usr/bin/env bash
 if [[ "$1" == "bundle" && "$2" == "check" ]]; then
   exit 1
@@ -318,29 +371,30 @@ fi
 exit 0
 BREW
 
-  chmod +x "$env_dir/bin/brew"
+    chmod +x "$env_dir/bin/brew"
 
-  local run_output status output
-  run_output="$(run_doctor "$env_dir" --fix)"
-  status="$(parse_status "$run_output")"
-  output="$(strip_status_line "$run_output")"
+    local run_output status output
+    run_output="$(run_doctor "$env_dir" --fix)"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
 
-  assert_exit_code "$status" 1 "doctor --fix should return warning when auto-fix fails"
-  assert_contains "$output" "Auto-fix failed for Homebrew dependencies" "brew failed autofix should be reported"
+    assert_exit_code "$status" 1 "doctor --fix should return warning when auto-fix fails"
+    assert_contains "$output" "Auto-fix failed for Homebrew dependencies" "brew failed autofix should be reported"
 }
 
 main() {
-  test_help
-  test_happy_path_json
-  test_happy_path_markdown
-  test_explain_happy_path
-  test_explain_warning_path
-  test_fix_mode_runs_autofix
-  test_fix_mode_reports_warning_when_fix_fails
-  test_unknown_argument_returns_error
-  test_non_macos_reports_warning
-  test_missing_command_returns_warning_exit_code
-  echo "[PASS] doctor.sh tests completed"
+    test_help
+    test_happy_path_json
+    test_happy_path_markdown
+    test_explain_happy_path
+    test_explain_warning_path
+    test_fix_mode_runs_autofix
+    test_fix_mode_reports_warning_when_fix_fails
+    test_unknown_argument_returns_error
+    test_non_macos_reports_warning
+    test_missing_command_returns_warning_exit_code
+    test_macos_posture_warnings_are_structured
+    echo "[PASS] doctor.sh tests completed"
 }
 
 main

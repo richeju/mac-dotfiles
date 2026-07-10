@@ -2,11 +2,15 @@
 
 set -euo pipefail
 
+# launchd starts jobs with a minimal PATH and does not read shell profiles.
+export PATH="${MAC_DOTFILES_PATH:-$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin}"
+
 LOG_DIR="$HOME/.local/state/mac-dotfiles"
 LOG_FILE="$LOG_DIR/maintenance.log"
 LOCK_DIR="$LOG_DIR/maintenance.lock"
 AUTO_CHEZMOI_UPDATE="${AUTO_CHEZMOI_UPDATE:-1}"
 BREW_MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-brew-maintenance.sh"
+maintenance_work_done=0
 
 mkdir -p "$LOG_DIR"
 
@@ -30,6 +34,8 @@ if [[ "$AUTO_CHEZMOI_UPDATE" == "1" ]]; then
         echo "🧩 Syncing dotfiles with chezmoi..."
         if ! chezmoi update --apply; then
             echo "⚠️  chezmoi update failed. Continuing with Homebrew maintenance."
+        else
+            maintenance_work_done=1
         fi
     else
         echo "⚠️  chezmoi not installed, skipping dotfiles sync"
@@ -46,6 +52,16 @@ fi
 
 # shellcheck source=/dev/null
 source "$BREW_MAINTENANCE_SCRIPT"
-run_brew_maintenance
+if command -v brew >/dev/null 2>&1; then
+    run_brew_maintenance
+    maintenance_work_done=1
+else
+    echo "⚠️  Homebrew is unavailable in PATH; maintenance is incomplete"
+fi
+
+if [[ "$maintenance_work_done" -eq 0 ]]; then
+    echo "❌ No maintenance task could run"
+    exit 1
+fi
 
 echo "✅ Maintenance completed"

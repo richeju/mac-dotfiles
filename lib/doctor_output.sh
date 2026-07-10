@@ -5,6 +5,7 @@
 # The caller owns CHECK_NAMES, CHECK_STATUS, CHECK_MESSAGE, has_error, and
 # FIX_MODE. Keeping rendering separate from health checks makes it easier to
 # add output formats without changing the diagnostic workflow.
+# shellcheck disable=SC2154 # Globals are owned by doctor.sh, which sources this file.
 
 bool_label() {
     local value="$1"
@@ -71,7 +72,7 @@ print_markdown_summary() {
             *) icon="ℹ️ info" ;;
         esac
 
-        printf '| `%s` | %s | %s |\n' \
+        printf "| \`%s\` | %s | %s |\n" \
             "${CHECK_NAMES[$i]}" \
             "$icon" \
             "${CHECK_MESSAGE[$i]}"
@@ -120,7 +121,7 @@ Try:
   chezmoi init --apply richeju/mac-dotfiles
 TEXT
             ;;
-        command:git|command:curl)
+        command:git | command:curl)
             cat <<TEXT
 Meaning:
   $name is required by the bootstrap and update workflow.
@@ -130,7 +131,7 @@ Try:
   brew bundle --global --verbose
 TEXT
             ;;
-        version:git|version:chezmoi)
+        version:git | version:chezmoi)
             cat <<'TEXT'
 Meaning:
   The installed tool version is older than the supported baseline.
@@ -174,6 +175,61 @@ Try:
 
 Safer option:
   mac-dotfiles.sh safe-update
+TEXT
+            ;;
+        security:filevault)
+            cat <<'TEXT'
+Meaning:
+  FileVault does not currently encrypt the Mac startup disk.
+
+Try:
+  Open System Settings > Privacy & Security > FileVault and choose how to store the recovery key.
+TEXT
+            ;;
+        security:firewall)
+            cat <<'TEXT'
+Meaning:
+  The macOS application firewall is currently disabled.
+
+Try:
+  Open System Settings > Network > Firewall and enable it.
+TEXT
+            ;;
+        security:gatekeeper)
+            cat <<'TEXT'
+Meaning:
+  Gatekeeper application assessments are disabled.
+
+Try:
+  sudo spctl --master-enable
+TEXT
+            ;;
+        backup:time-machine)
+            cat <<'TEXT'
+Meaning:
+  No Time Machine backup destination is configured.
+
+Try:
+  Open System Settings > General > Time Machine and select a backup disk.
+TEXT
+            ;;
+        system-updates)
+            cat <<'TEXT'
+Meaning:
+  macOS or Command Line Tools updates are available.
+
+Try:
+  Open System Settings > General > Software Update.
+TEXT
+            ;;
+        maintenance:launchagent)
+            cat <<'TEXT'
+Meaning:
+  Scheduled maintenance is not loaded or its recent log shows that required work was skipped.
+
+Try:
+  chezmoi apply
+  mac-dotfiles.sh maintenance
 TEXT
             ;;
         *)

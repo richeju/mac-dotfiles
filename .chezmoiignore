@@ -1,6 +1,5 @@
 # Ignore repo files
 .github/
-Brewfile
 README.md
 doctor.sh
 install.sh

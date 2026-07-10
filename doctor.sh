@@ -12,10 +12,10 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/doctor_output.sh
 source "$SCRIPT_DIR/lib/doctor_output.sh"
 
-ok() { echo -e "${GREEN}✓${NC} $1"; }
-warn() { echo -e "${YELLOW}⚠${NC} $1"; }
-info() { echo -e "${BLUE}ℹ${NC} $1"; }
-error() { echo -e "${RED}✗${NC} $1"; }
+ok() { [[ "${JSON_MODE:-0}" -eq 1 ]] || echo -e "${GREEN}✓${NC} $1"; }
+warn() { [[ "${JSON_MODE:-0}" -eq 1 ]] || echo -e "${YELLOW}⚠${NC} $1"; }
+info() { [[ "${JSON_MODE:-0}" -eq 1 ]] || echo -e "${BLUE}ℹ${NC} $1"; }
+error() { echo -e "${RED}✗${NC} $1" >&2; }
 
 usage() {
     cat <<'USAGE'
@@ -23,7 +23,7 @@ Usage: ./doctor.sh [--fix] [--json] [--markdown] [--explain] [--help]
 
 Options:
   --fix    Attempt safe automatic fixes when possible.
-  --json   Print a machine-readable JSON summary at the end.
+  --json   Print only a machine-readable JSON document.
   --markdown  Print a Markdown summary table (useful for issues/PRs).
   --explain  Explain warnings and suggest next commands.
   --help   Show this help.
@@ -49,7 +49,7 @@ while (($#)); do
         --explain)
             EXPLAIN_MODE=1
             ;;
-        --help|-h)
+        --help | -h)
             usage
             exit 0
             ;;
@@ -141,13 +141,19 @@ run_autofix_command() {
     fi
 
     info "Applying fix: $command_text"
-    if "$@"; then
+    if [[ "$JSON_MODE" -eq 1 ]]; then
+        if "$@" >/dev/null 2>&1; then
+            return 0
+        fi
+        return 1
+    elif "$@"; then
         ok "$success_message"
         return 0
+    else
+        warn "$fail_message"
+        return 1
     fi
 
-    warn "$fail_message"
-    return 1
 }
 
 auto_fix_brew_bundle() {
@@ -178,14 +184,14 @@ run_check_with_optional_fix() {
     local fix_function="$5"
     shift 5
 
-    if "$@"; then
+    if "$@" >/dev/null 2>&1; then
         ok "$success_message"
         record_check "$check_key" "ok" "No issue detected"
         return
     fi
 
     warn "$warn_message"
-    if "$fix_function" && "$@"; then
+    if "$fix_function" && "$@" >/dev/null 2>&1; then
         ok "$fix_success_message"
         record_check "$check_key" "ok" "Fixed via --fix"
     else
@@ -208,8 +214,63 @@ check_broken_symlink() {
     fi
 }
 
-echo "🩺 mac-dotfiles doctor"
-echo "======================="
+record_macos_state() {
+    local name="$1"
+    local good_message="$2"
+    local warn_message="$3"
+    shift 3
+
+    if "$@"; then
+        ok "$good_message"
+        record_check "$name" "ok" "$good_message"
+    else
+        warn "$warn_message"
+        record_check "$name" "warn" "$warn_message"
+        has_error=1
+    fi
+}
+
+filevault_enabled() {
+    fdesetup status 2>/dev/null | grep -Fq "FileVault is On"
+}
+
+firewall_enabled() {
+    local firewall_cmd="${MAC_DOTFILES_FIREWALL_CMD:-/usr/libexec/ApplicationFirewall/socketfilterfw}"
+    "$firewall_cmd" --getglobalstate 2>/dev/null | grep -Fq "enabled"
+}
+
+gatekeeper_enabled() {
+    spctl --status 2>/dev/null | grep -Fq "assessments enabled"
+}
+
+time_machine_configured() {
+    tmutil destinationinfo 2>/dev/null | grep -Fq "Name"
+}
+
+system_updates_current() {
+    local output
+    output="$(softwareupdate -l 2>&1)"
+    grep -Fq "No new software available" <<<"$output"
+}
+
+maintenance_healthy() {
+    local service
+    local log="$HOME/.local/state/mac-dotfiles/maintenance.log"
+    local latest_run
+
+    service="gui/$(id -u)/com.chezmoi.mac-dotfiles.maintenance"
+
+    launchctl print "$service" >/dev/null 2>&1 || return 1
+    [[ -f "$log" ]] || return 1
+    latest_run="$(awk '/^===== .* :: mac-dotfiles maintenance =====$/ {run=""} {run = run $0 ORS} END {printf "%s", run}' "$log")"
+    grep -Fq "Maintenance completed" <<<"$latest_run" || return 1
+    ! grep -Eq "(not installed, skipping|unavailable in PATH|No maintenance task could run)" <<<"$latest_run"
+}
+
+if [[ "$JSON_MODE" -ne 1 ]]; then
+    echo "🩺 mac-dotfiles doctor"
+    echo "======================="
+fi
 
 if [[ "$FIX_MODE" -eq 1 ]]; then
     info "Fix mode enabled"
@@ -254,8 +315,34 @@ check_broken_symlink "$HOME/.Brewfile" "Homebrew global Brewfile"
 check_broken_symlink "$HOME/.gitconfig" "Git config"
 check_broken_symlink "$HOME/.local/bin/mac-dotfiles-maintenance.sh" "Maintenance script"
 
+if [[ "$OSTYPE" == darwin* ]]; then
+    record_macos_state "security:filevault" \
+        "FileVault is enabled" \
+        "FileVault is disabled; enable it manually in System Settings" \
+        filevault_enabled
+    record_macos_state "security:firewall" \
+        "macOS firewall is enabled" \
+        "macOS firewall is disabled; enable it manually in System Settings" \
+        firewall_enabled
+    record_macos_state "security:gatekeeper" \
+        "Gatekeeper assessments are enabled" \
+        "Gatekeeper assessments are disabled" \
+        gatekeeper_enabled
+    record_macos_state "backup:time-machine" \
+        "Time Machine has a configured destination" \
+        "Time Machine has no configured destination" \
+        time_machine_configured
+    record_macos_state "system-updates" \
+        "No macOS software updates are pending" \
+        "Recommended macOS software updates are pending" \
+        system_updates_current
+    record_macos_state "maintenance:launchagent" \
+        "Scheduled maintenance is loaded and its recent log is healthy" \
+        "Scheduled maintenance is missing, unloaded, or recently skipped its work" \
+        maintenance_healthy
+fi
+
 if [[ "$JSON_MODE" -eq 1 ]]; then
-    echo
     print_json_summary
 fi
 
@@ -269,7 +356,9 @@ if [[ "$EXPLAIN_MODE" -eq 1 ]]; then
     print_explanations
 fi
 
-if [[ "$has_error" -eq 0 ]]; then
+if [[ "$JSON_MODE" -eq 1 ]]; then
+    [[ "$has_error" -eq 0 ]] && exit 0 || exit 1
+elif [[ "$has_error" -eq 0 ]]; then
     echo
     ok "System check completed successfully"
 else

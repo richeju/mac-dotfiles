@@ -7,7 +7,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 validate_chezmoi_source_names() {
     local path
 
-    git -C "$REPO_ROOT" ls-files | while IFS= read -r path; do
+    git -C "$REPO_ROOT" ls-files --cached --others --exclude-standard | while IFS= read -r path; do
+        [[ -e "$REPO_ROOT/$path" ]] || continue
         case "$path" in
             */run_*)
                 echo "Reserved chezmoi run_ prefix outside repository root: $path" >&2
@@ -20,7 +21,7 @@ validate_chezmoi_source_names() {
 validate_repo_files_are_ignored() {
     local path
 
-    for path in .github/ Brewfile README.md doctor.sh install.sh lib/ skills/ tests/; do
+    for path in .github/ README.md doctor.sh install.sh lib/ skills/ tests/; do
         if ! grep -Fqx "$path" "$REPO_ROOT/.chezmoiignore"; then
             echo "Repository-only path is missing from .chezmoiignore: $path" >&2
             return 1
@@ -48,9 +49,10 @@ validate_script() {
 validate_shell_syntax() {
     local script
 
-    git -C "$REPO_ROOT" ls-files | while IFS= read -r script; do
+    git -C "$REPO_ROOT" ls-files --cached --others --exclude-standard | while IFS= read -r script; do
+        [[ -e "$REPO_ROOT/$script" ]] || continue
         case "$script" in
-            *.sh|*.sh.tmpl)
+            *.sh | *.sh.tmpl)
                 validate_script "$REPO_ROOT/$script"
                 ;;
         esac
@@ -60,8 +62,8 @@ validate_shell_syntax() {
 run_test_suites() {
     local test_file
 
-    git -C "$REPO_ROOT" ls-files 'tests/*_test.sh' | sort | while IFS= read -r test_file; do
-        bash "$REPO_ROOT/$test_file"
+    find "$REPO_ROOT/tests" -maxdepth 1 -type f -name '*_test.sh' -print | sort | while IFS= read -r test_file; do
+        bash "$test_file"
     done
 }
 
