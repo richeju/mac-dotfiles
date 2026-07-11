@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+STATE_DIR="${MAC_DOTFILES_STATE_DIR:-$HOME/.local/state/mac-dotfiles}"
+SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
+MIGRATIONS_DIR="$SOURCE_DIR/migrations"
+VERSION_FILE="$STATE_DIR/schema-version"
+LOG_FILE="$STATE_DIR/migrations.log"
+LOCK_DIR="$STATE_DIR/operation.lock"
+JSON_MODE=0
+DRY_RUN=0
+
+usage() {
+    cat <<'USAGE'
+Usage: mac-dotfiles-migrate.sh [status|plan|apply|check] [--json] [--dry-run]
+
+Commands:
+  status   Show current and desired schema versions.
+  plan     List pending migrations without changing anything.
+  apply    Apply pending migrations in numeric order.
+  check    Exit 0 when current, 1 when migrations are pending.
+USAGE
+}
+
+die() {
+    echo "✗ $1" >&2
+    exit "${2:-2}"
+}
+
+current_version() {
+    local value=0
+    [[ -f "$VERSION_FILE" ]] && value="$(cat "$VERSION_FILE")"
+    [[ "$value" =~ ^[0-9]+$ ]] || die "Invalid schema version file: $VERSION_FILE"
+    echo "$value"
+}
+
+desired_version() {
+    local path name number latest=0
+    [[ -d "$MIGRATIONS_DIR" ]] || die "Migrations directory is missing: $MIGRATIONS_DIR"
+    for path in "$MIGRATIONS_DIR"/[0-9][0-9][0-9]-*.sh; do
+        [[ -f "$path" ]] || continue
+        name="${path##*/}"
+        number="${name%%-*}"
+        number=$((10#$number))
+        ((number > latest)) && latest="$number"
+    done
+    echo "$latest"
+}
+
+pending_migrations() {
+    local current="$1" path name number
+    for path in "$MIGRATIONS_DIR"/[0-9][0-9][0-9]-*.sh; do
+        [[ -f "$path" ]] || continue
+        name="${path##*/}"
+        number="${name%%-*}"
+        number=$((10#$number))
+        ((number > current)) && printf '%s\t%s\n' "$number" "$path"
+    done
+}
+
+print_status() {
+    local current desired pending
+    current="$(current_version)"
+    desired="$(desired_version)"
+    pending=$((desired - current))
+    ((pending < 0)) && pending=0
+    if [[ "$JSON_MODE" -eq 1 ]]; then
+        printf '{"schema_version":1,"current":%d,"desired":%d,"pending":%d,"up_to_date":%s}\n' \
+            "$current" "$desired" "$pending" "$([[ "$current" -eq "$desired" ]] && echo true || echo false)"
+    else
+        echo "Current schema: $current"
+        echo "Desired schema: $desired"
+        echo "Pending migrations: $pending"
+    fi
+}
+
+print_plan() {
+    local current found=0 number path
+    current="$(current_version)"
+    if [[ "$JSON_MODE" -eq 1 ]]; then
+        command -v jq >/dev/null 2>&1 || die "jq is required for --json"
+        pending_migrations "$current" | jq -Rn \
+            --argjson current "$current" \
+            --argjson desired "$(desired_version)" \
+            '[inputs | split("\t") | {version: (.[0] | tonumber), name: (.[1] | split("/") | last)}] as $items | {schema_version: 1, current: $current, desired: $desired, pending: $items}'
+        return
+    fi
+    echo "Schema migration plan"
+    while IFS=$'\t' read -r number path; do
+        [[ -n "$path" ]] || continue
+        found=1
+        printf '  %03d  %s\n' "$number" "${path##*/}"
+    done < <(pending_migrations "$current")
+    [[ "$found" -eq 1 ]] || echo "  No pending migrations."
+}
+
+acquire_lock() {
+    mkdir -p "$STATE_DIR"
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+        echo "$$" >"$LOCK_DIR/pid"
+        return
+    fi
+    owner=""
+    [[ -f "$LOCK_DIR/pid" ]] && owner="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
+    if [[ "$owner" =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null; then
+        die "Another mac-dotfiles operation is running (PID $owner)" 1
+    fi
+    rm -rf "$LOCK_DIR"
+    mkdir "$LOCK_DIR"
+    echo "$$" >"$LOCK_DIR/pid"
+}
+
+release_lock() { rm -rf "$LOCK_DIR"; }
+
+record_version() {
+    local version="$1" temp
+    temp="$VERSION_FILE.tmp"
+    echo "$version" >"$temp"
+    mv "$temp" "$VERSION_FILE"
+}
+
+apply_migrations() {
+    local current number path found=0 lock_acquired=0
+    current="$(current_version)"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        print_plan
+        return
+    fi
+    if [[ "${MAC_DOTFILES_LOCK_HELD:-0}" != "1" ]]; then
+        acquire_lock
+        lock_acquired=1
+        trap release_lock EXIT INT TERM
+    fi
+    mkdir -p "$STATE_DIR"
+    touch "$LOG_FILE"
+    while IFS=$'\t' read -r number path; do
+        [[ -n "$path" ]] || continue
+        found=1
+        echo "==> Applying migration $(printf '%03d' "$number"): ${path##*/}"
+        {
+            echo "===== $(date '+%Y-%m-%d %H:%M:%S') :: ${path##*/} ====="
+            MAC_DOTFILES_STATE_DIR="$STATE_DIR" bash "$path"
+        } 2>&1 | tee -a "$LOG_FILE"
+        record_version "$number"
+    done < <(pending_migrations "$current")
+    [[ "$found" -eq 1 ]] || echo "Schema is already up to date."
+    echo "✓ Schema version: $(current_version)"
+    if [[ "$lock_acquired" -eq 1 ]]; then
+        release_lock
+        trap - EXIT INT TERM
+    fi
+}
+
+command="${1:-status}"
+shift || true
+while (($#)); do
+    case "$1" in
+        --json) JSON_MODE=1 ;;
+        --dry-run) DRY_RUN=1 ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        *) die "Unknown option: $1" ;;
+    esac
+    shift
+done
+
+case "$command" in
+    status) print_status ;;
+    plan) print_plan ;;
+    apply) apply_migrations ;;
+    check)
+        [[ "$(current_version)" -eq "$(desired_version)" ]]
+        ;;
+    help | -h | --help) usage ;;
+    *) die "Unknown command: $command" ;;
+esac

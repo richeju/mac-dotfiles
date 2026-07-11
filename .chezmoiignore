@@ -4,6 +4,7 @@ README.md
 doctor.sh
 install.sh
 lib/
+migrations/
 profiles/
 skills/
 tests/

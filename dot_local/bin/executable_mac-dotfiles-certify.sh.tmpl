@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
+STATE_DIR="${MAC_DOTFILES_STATE_DIR:-$HOME/.local/state/mac-dotfiles}"
+ENGINE="$SOURCE_DIR/dot_local/bin/executable_mac-dotfiles-converge.sh.tmpl"
+MIGRATOR="$SOURCE_DIR/dot_local/bin/executable_mac-dotfiles-migrate.sh.tmpl"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-certify.XXXXXX")"
+CHECKS_FILE="$TMP_DIR/checks.jsonl"
+FORMAT="text"
+OUTPUT=""
+SKIP_LIVE=0
+FAILURES=0
+
+cleanup() { rm -rf "$TMP_DIR"; }
+trap cleanup EXIT
+
+usage() {
+    cat <<'USAGE'
+Usage: mac-dotfiles-certify.sh [--json|--markdown] [--output PATH] [--skip-live]
+
+Runs repository, profile, migration, transaction, formatting, and optional live
+desired-state checks, then emits a versioned certification attestation.
+USAGE
+}
+
+while (($#)); do
+    case "$1" in
+        --json) FORMAT="json" ;;
+        --markdown) FORMAT="markdown" ;;
+        --output)
+            [[ $# -ge 2 ]] || {
+                echo "Missing value for --output" >&2
+                exit 2
+            }
+            OUTPUT="$2"
+            shift
+            ;;
+        --skip-live) SKIP_LIVE=1 ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+command -v jq >/dev/null 2>&1 || {
+    echo "jq is required" >&2
+    exit 2
+}
+: >"$CHECKS_FILE"
+
+record_check() {
+    local name="$1" status="$2" detail="$3"
+    jq -nc --arg name "$name" --arg status "$status" --arg detail "$detail" \
+        '{name:$name,status:$status,detail:$detail}' >>"$CHECKS_FILE"
+    [[ "$status" != "fail" ]] || FAILURES=$((FAILURES + 1))
+}
+
+run_check() {
+    local name="$1"
+    shift
+    local log="$TMP_DIR/${name//[^A-Za-z0-9]/_}.log" detail
+    if "$@" >"$log" 2>&1; then
+        detail="$(tail -n 1 "$log")"
+        record_check "$name" "pass" "${detail:-completed}"
+    else
+        detail="$(tail -n 3 "$log" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+        record_check "$name" "fail" "${detail:-command failed}"
+    fi
+}
+
+check_profiles() {
+    local profile manifest duplicates
+    [[ -x "$ENGINE" || -f "$ENGINE" ]] || return 1
+    for profile in minimal personal developer gaming full; do
+        manifest="$TMP_DIR/$profile.Brewfile"
+        CHEZMOI_SOURCE_DIR="$SOURCE_DIR" bash "$ENGINE" profile show "$profile" >"$manifest"
+        grep -Eq '^(brew|cask) "' "$manifest" || return 1
+        duplicates="$(awk '/^(brew|cask) "/ {key=$1 ":" $2; gsub(/"/, "", key); print key}' "$manifest" | sort | uniq -d)"
+        [[ -z "$duplicates" ]] || return 1
+    done
+    echo "5 profiles rendered without duplicate entries"
+}
+
+check_migration_catalog() {
+    local root="$TMP_DIR/migration-catalog"
+    mkdir -p "$root/home/.config/chezmoi" "$root/source"
+    cp -R "$SOURCE_DIR/migrations" "$root/source/migrations"
+    printf '[data]\nname = "Certify"\nemail = "certify@example.com"\n' >"$root/home/.config/chezmoi/chezmoi.toml"
+    HOME="$root/home" CHEZMOI_SOURCE_DIR="$root/source" \
+        MAC_DOTFILES_STATE_DIR="$root/home/.local/state/mac-dotfiles" \
+        MAC_DOTFILES_CONFIG_FILE="$root/home/.config/chezmoi/chezmoi.toml" \
+        bash "$MIGRATOR" plan --json | jq -e '.current == 0 and .desired >= 2 and (.pending | length) == .desired' >/dev/null
+    echo "migration catalog is sequential and machine-readable"
+}
+
+check_live_state() {
+    local installed="$HOME/.local/bin/mac-dotfiles-converge.sh"
+    [[ -x "$installed" ]] || return 1
+    "$installed" plan --json | jq -e '.drift == false' >/dev/null
+    "$installed" validate >/dev/null
+    echo "installed Mac is converged and validation passed"
+}
+
+run_check "test-suite" env -u CHEZMOI_SOURCE_DIR MAC_DOTFILES_CERTIFY_CHILD=1 bash "$SOURCE_DIR/tests/test_suite.sh"
+if command -v shellcheck >/dev/null 2>&1; then
+    run_check "shellcheck" shellcheck \
+        "$SOURCE_DIR/doctor.sh" "$SOURCE_DIR/install.sh" "$SOURCE_DIR"/lib/*.sh \
+        "$SOURCE_DIR"/tests/*.sh "$SOURCE_DIR"/dot_local/bin/*.sh.tmpl
+else
+    record_check "shellcheck" "skip" "shellcheck is not installed"
+fi
+if command -v shfmt >/dev/null 2>&1; then
+    run_check "shfmt" shfmt -d -i 4 -ci \
+        "$SOURCE_DIR/doctor.sh" "$SOURCE_DIR/install.sh" "$SOURCE_DIR"/lib/*.sh \
+        "$SOURCE_DIR"/tests/*.sh "$SOURCE_DIR"/dot_local/bin/*.sh.tmpl
+else
+    record_check "shfmt" "skip" "shfmt is not installed"
+fi
+run_check "profiles" check_profiles
+run_check "migration-catalog" check_migration_catalog
+run_check "transaction-faults" bash "$SOURCE_DIR/tests/converge_test.sh"
+
+if [[ "$SKIP_LIVE" -eq 1 ]]; then
+    record_check "live-idempotence" "skip" "live desired-state check disabled"
+else
+    run_check "live-idempotence" check_live_state
+fi
+
+commit="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+platform="$(sw_vers -productVersion 2>/dev/null || uname -s)"
+overall="pass"
+[[ "$FAILURES" -eq 0 ]] || overall="fail"
+
+jq -s \
+    --arg commit "$commit" \
+    --arg timestamp "$timestamp" \
+    --arg platform "$platform" \
+    --arg overall "$overall" \
+    '{schema_version:1,kind:"mac-dotfiles-certification",commit:$commit,timestamp:$timestamp,platform:$platform,overall:$overall,checks:.}' \
+    "$CHECKS_FILE" >"$TMP_DIR/attestation.json"
+
+mkdir -p "$STATE_DIR/certifications"
+cp "$TMP_DIR/attestation.json" "$STATE_DIR/certifications/${timestamp//[:]/-}.json"
+cp "$TMP_DIR/attestation.json" "$STATE_DIR/certifications/latest.json"
+
+render_text() {
+    jq -r '"mac-dotfiles certification\n==========================\nCommit: \(.commit)\nPlatform: \(.platform)\nOverall: \(.overall)\n", (.checks[] | "  \(.status | ascii_upcase)\t\(.name) — \(.detail)")' "$TMP_DIR/attestation.json"
+}
+
+render_markdown() {
+    jq -r '"# mac-dotfiles certification\n\n- Commit: `\(.commit)`\n- Platform: `\(.platform)`\n- Generated: \(.timestamp)\n- Overall: **\(.overall)**\n\n| Check | Status | Detail |\n|---|---|---|\n" + ([.checks[] | "| `\(.name)` | \(.status) | \(.detail | gsub("\\|"; "\\|")) |"] | join("\n"))' "$TMP_DIR/attestation.json"
+}
+
+case "$FORMAT" in
+    json) cp "$TMP_DIR/attestation.json" "$TMP_DIR/output" ;;
+    markdown) render_markdown >"$TMP_DIR/output" ;;
+    text) render_text >"$TMP_DIR/output" ;;
+esac
+
+if [[ -n "$OUTPUT" ]]; then
+    mkdir -p "$(dirname "$OUTPUT")"
+    cp "$TMP_DIR/output" "$OUTPUT"
+    echo "Certification written to $OUTPUT"
+else
+    cat "$TMP_DIR/output"
+fi
+
+[[ "$FAILURES" -eq 0 ]]

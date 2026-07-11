@@ -128,6 +128,10 @@ Manual transaction rollback first preserves the current files under `~/.local/st
 
 Manual security items such as FileVault, firewall, Time Machine, and macOS updates remain advisory and never trigger a convergence rollback.
 
+Repository evolution is handled by sequential, idempotent scripts under `migrations/`. The current schema version is stored locally in `~/.local/state/mac-dotfiles/schema-version`; convergence applies pending migrations under the same operation lock before changing the desired state.
+
+For a stronger release or machine check, `mac-dotfiles.sh certify` runs the full test suite, formatting and static analysis, profile rendering, migration-catalog validation, transaction fault injection, and live idempotence validation. It writes a versioned JSON attestation to `~/.local/state/mac-dotfiles/certifications/`; use `--skip-live` for CI or a repository-only check.
+
 ## ⚙️ Automatic Configurations
 
 ### Git Configuration
@@ -232,6 +236,8 @@ The launcher provides a compact numbered menu for common actions:
 - preview desired-state drift
 - run a transactional convergence
 - inspect and restore convergence transactions
+- inspect/apply repository schema migrations
+- generate a reproducible certification attestation
 
 You can also call commands directly:
 ```bash
@@ -249,6 +255,9 @@ mac-dotfiles.sh drift
 mac-dotfiles.sh converge
 mac-dotfiles.sh transactions
 mac-dotfiles.sh tx-rollback latest --yes
+mac-dotfiles.sh migrate plan --json
+mac-dotfiles.sh migrate apply
+mac-dotfiles.sh certify --markdown --output ~/mac-dotfiles-certification.md
 ```
 
 Use `mac-dotfiles.sh repair` after the initial install whenever you want to put the Mac back into the expected state. It fast-forwards the desired-state source, runs a confirmed transactional convergence, applies safe doctor auto-fixes, and writes `~/mac-dotfiles-repair-report.md`.
@@ -360,8 +369,11 @@ brew bundle --global --verbose
 - `doctor.sh` - Health check script for dependencies and dotfile status
 - `lib/doctor_output.sh` - JSON, Markdown, and explanation renderers used by the health check
 - `tests/test_suite.sh` - Syntax validation and entry point for the complete shell test suite
+- `migrations/*.sh` - Ordered, idempotent repository schema migrations
 - `dot_local/bin/executable_mac-dotfiles.sh.tmpl` - Compact launcher/menu for common workflows
 - `dot_local/bin/executable_mac-dotfiles-converge.sh.tmpl` - Profile, plan, drift, transaction, validation, and rollback engine
+- `dot_local/bin/executable_mac-dotfiles-migrate.sh.tmpl` - Versioned schema migration planner and runner
+- `dot_local/bin/executable_mac-dotfiles-certify.sh.tmpl` - Versioned repository and live-machine certification attestation
 - `run_onchange_configure-dock-darwin.sh.tmpl` - Dock configuration reapplied when its desired values change
 - `run_onchange_configure-finder-and-inputs-darwin.sh` - Finder and input comfort defaults, reapplied when the baseline changes
 - `run_onchange_harden-macos-baseline-darwin.sh` - macOS hardening baseline, reapplied when the baseline changes

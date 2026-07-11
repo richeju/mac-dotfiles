@@ -11,6 +11,8 @@ ROLLBACK_SCRIPT="$HOME/.local/bin/mac-dotfiles-rollback.sh"
 HISTORY_SCRIPT="$HOME/.local/bin/mac-dotfiles-history.sh"
 MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-maintenance.sh"
 CONVERGE_SCRIPT="$HOME/.local/bin/mac-dotfiles-converge.sh"
+MIGRATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-migrate.sh"
+CERTIFY_SCRIPT="$HOME/.local/bin/mac-dotfiles-certify.sh"
 
 usage() {
     cat <<'USAGE'
@@ -36,6 +38,8 @@ Commands:
   validate      Validate blocking desired-state invariants
   transactions  List convergence transaction history
   tx-rollback   Restore a convergence transaction snapshot
+  migrate       Show, plan, apply, or check versioned migrations
+  certify       Generate a reproducible machine certification attestation
   help          Show this help
 USAGE
 }
@@ -168,6 +172,8 @@ mac-dotfiles
 13. Show configuration drift
 14. Converge this Mac transactionally
 15. Manage machine profile
+16. Show/apply schema migrations
+17. Certify this Mac
 0. Exit
 
 MENU
@@ -197,6 +203,8 @@ run_menu() {
             13) run_convergence_command drift || true ;;
             14) run_convergence_command converge ;;
             15) run_profile_menu ;;
+            16) run_if_executable "$MIGRATE_SCRIPT" plan ;;
+            17) run_if_executable "$CERTIFY_SCRIPT" ;;
             0 | q | quit | exit)
                 echo "Bye."
                 return 0
@@ -234,6 +242,8 @@ case "$command" in
     validate) run_convergence_command validate "$@" ;;
     transactions) run_convergence_command transactions "$@" ;;
     tx-rollback) run_convergence_command rollback "$@" ;;
+    migrate) run_if_executable "$MIGRATE_SCRIPT" "$@" ;;
+    certify) run_if_executable "$CERTIFY_SCRIPT" "$@" ;;
     help | -h | --help) usage ;;
     *)
         echo "Unknown command: $command" >&2

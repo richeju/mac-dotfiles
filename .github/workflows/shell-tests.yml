@@ -44,3 +44,17 @@ jobs:
             -e 's/{{ $minute }}/0/g' \
             dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl > /tmp/maintenance.plist
           plutil -lint /tmp/maintenance.plist
+
+      - name: Generate certification attestation
+        run: |
+          CHEZMOI_SOURCE_DIR="$GITHUB_WORKSPACE" \
+            MAC_DOTFILES_STATE_DIR="$RUNNER_TEMP/mac-dotfiles-state" \
+            bash dot_local/bin/executable_mac-dotfiles-certify.sh.tmpl \
+              --json --skip-live --output "$RUNNER_TEMP/mac-dotfiles-certification.json"
+          jq -e '.overall == "pass" and .schema_version == 1' "$RUNNER_TEMP/mac-dotfiles-certification.json"
+
+      - name: Upload certification attestation
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-dotfiles-certification
+          path: ${{ runner.temp }}/mac-dotfiles-certification.json
