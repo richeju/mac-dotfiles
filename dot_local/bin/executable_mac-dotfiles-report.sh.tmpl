@@ -11,6 +11,7 @@ CONVERGE_SCRIPT="$HOME/.local/bin/mac-dotfiles-converge.sh"
 TRANSACTIONS_DIR="$STATE_DIR/transactions"
 MIGRATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-migrate.sh"
 LATEST_CERTIFICATION="$STATE_DIR/certifications/latest.json"
+RECOVERY_DIR="$STATE_DIR/recovery-snapshots"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-report.XXXXXX")"
 
 cleanup() {
@@ -243,6 +244,12 @@ if [[ -f "$LATEST_CERTIFICATION" ]]; then
     echo "- Latest certification: $(jq -r '"\(.overall) (`\(.commit[0:7])`, \(.timestamp))"' "$LATEST_CERTIFICATION")"
 else
     echo "- Latest certification: none"
+fi
+latest_recovery="$(find "$RECOVERY_DIR" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tar.gz.enc' \) 2>/dev/null | sort | tail -n 1 || true)"
+if [[ -n "$latest_recovery" ]]; then
+    echo "- Latest recovery snapshot: $(basename "$latest_recovery") ($(du -h "$latest_recovery" | awk '{print $1}'))"
+else
+    echo "- Latest recovery snapshot: none"
 fi
 
 echo
