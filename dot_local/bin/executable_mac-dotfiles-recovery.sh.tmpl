@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+umask 077
 
 STATE_DIR="${MAC_DOTFILES_STATE_DIR:-$HOME/.local/state/mac-dotfiles}"
 SNAPSHOT_DIR="${MAC_DOTFILES_SNAPSHOT_DIR:-$STATE_DIR/recovery-snapshots}"
@@ -8,6 +9,10 @@ LOCK_DIR="$STATE_DIR/operation.lock"
 FORMAT_VERSION=1
 ASSUME_YES=0
 ENCRYPT=0
+LOCK_HELD=0
+TEMP_DIRS=()
+NEW_TEMP_DIR=""
+PARTIAL_OUTPUT=""
 
 usage() {
     cat <<'USAGE'
@@ -40,22 +45,48 @@ sha256_file() {
     fi
 }
 
+cleanup() {
+    local path
+    [[ "$LOCK_HELD" -eq 0 ]] || rm -rf "$LOCK_DIR"
+    for path in "${TEMP_DIRS[@]}"; do
+        rm -rf "$path"
+    done
+    [[ -z "$PARTIAL_OUTPUT" ]] || rm -f "$PARTIAL_OUTPUT"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+new_temp_dir() {
+    local prefix="$1"
+    NEW_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/$prefix.XXXXXX")"
+    TEMP_DIRS+=("$NEW_TEMP_DIR")
+}
+
 acquire_lock() {
+    local owner=""
     mkdir -p "$STATE_DIR"
-    mkdir "$LOCK_DIR" 2>/dev/null || die "Another mac-dotfiles operation is running (lock: $LOCK_DIR)"
+    if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+        [[ -f "$LOCK_DIR/pid" ]] && owner="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
+        if [[ "$owner" =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null; then
+            die "Another mac-dotfiles operation is running (PID $owner)"
+        fi
+        rm -rf "$LOCK_DIR"
+        mkdir "$LOCK_DIR"
+    fi
     echo "$$" >"$LOCK_DIR/pid"
-    trap 'rm -rf "$LOCK_DIR"' EXIT INT TERM
+    LOCK_HELD=1
 }
 
 release_lock() {
     rm -rf "$LOCK_DIR"
-    trap - EXIT INT TERM
+    LOCK_HELD=0
 }
 
 relative_target() {
     case "$1" in
-        "$HOME"/*) printf '%s\n' "${1#"$HOME"/}" ;;
         "$STATE_DIR"/*) printf '%s\n' "state/${1#"$STATE_DIR"/}" ;;
+        "$HOME"/*) printf '%s\n' "${1#"$HOME"/}" ;;
         *) return 1 ;;
     esac
 }
@@ -75,6 +106,41 @@ snapshot_targets() {
         "$HOME/.config/chezmoi/chezmoi.toml" \
         "$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist" \
         "$STATE_DIR/schema-version"
+}
+
+allowed_relative_targets() {
+    local target
+    while IFS= read -r target; do
+        relative_target "$target"
+    done < <(snapshot_targets)
+}
+
+is_allowed_relative() {
+    local candidate="$1" allowed
+    while IFS= read -r allowed; do
+        [[ "$candidate" != "$allowed" ]] || return 0
+    done < <(allowed_relative_targets)
+    return 1
+}
+
+encrypt_archive() {
+    local source="$1" destination="$2"
+    if [[ -n "${MAC_DOTFILES_RECOVERY_PASSWORD_FILE:-}" ]]; then
+        [[ -f "$MAC_DOTFILES_RECOVERY_PASSWORD_FILE" ]] || die "Recovery password file does not exist"
+        openssl enc -aes-256-cbc -salt -pbkdf2 -pass "file:$MAC_DOTFILES_RECOVERY_PASSWORD_FILE" -in "$source" -out "$destination"
+    else
+        openssl enc -aes-256-cbc -salt -pbkdf2 -in "$source" -out "$destination"
+    fi
+}
+
+decrypt_archive() {
+    local source="$1" destination="$2"
+    if [[ -n "${MAC_DOTFILES_RECOVERY_PASSWORD_FILE:-}" ]]; then
+        [[ -f "$MAC_DOTFILES_RECOVERY_PASSWORD_FILE" ]] || die "Recovery password file does not exist"
+        openssl enc -d -aes-256-cbc -pbkdf2 -pass "file:$MAC_DOTFILES_RECOVERY_PASSWORD_FILE" -in "$source" -out "$destination"
+    else
+        openssl enc -d -aes-256-cbc -pbkdf2 -in "$source" -out "$destination"
+    fi
 }
 
 build_snapshot() {
@@ -140,20 +206,23 @@ create_snapshot() {
     mkdir -p "$SNAPSHOT_DIR"
     output="${output:-$SNAPSHOT_DIR/mac-dotfiles-$id.tar.gz}"
     [[ "$ENCRYPT" -eq 0 || "$output" == *.enc ]] || output="$output.enc"
-    work="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-recovery.XXXXXX")"
+    new_temp_dir mac-dotfiles-recovery
+    work="$NEW_TEMP_DIR"
     build_snapshot "$work"
     archive="$work/snapshot.tar.gz"
     tar -C "$work" -czf "$archive" manifest.json checksums.sha256 files.txt payload inventory
     mkdir -p "$(dirname "$output")"
+    PARTIAL_OUTPUT="$output.tmp.$$"
     if [[ "$ENCRYPT" -eq 1 ]]; then
         command -v openssl >/dev/null 2>&1 || die "openssl is required for --encrypt"
-        openssl enc -aes-256-cbc -salt -pbkdf2 -in "$archive" -out "$output"
+        encrypt_archive "$archive" "$PARTIAL_OUTPUT"
     else
-        cp "$archive" "$output"
+        cp "$archive" "$PARTIAL_OUTPUT"
     fi
+    mv "$PARTIAL_OUTPUT" "$output"
+    PARTIAL_OUTPUT=""
     echo "✓ Recovery snapshot created: $output"
     echo "  Secrets included: no"
-    rm -rf "$work"
 }
 
 list_snapshots() {
@@ -174,7 +243,7 @@ unpack_snapshot() {
     if [[ "$snapshot" == *.enc ]]; then
         command -v openssl >/dev/null 2>&1 || die "openssl is required for encrypted snapshots"
         archive="$destination/decrypted.tar.gz"
-        openssl enc -d -aes-256-cbc -pbkdf2 -in "$snapshot" -out "$archive"
+        decrypt_archive "$snapshot" "$archive"
     fi
     while IFS= read -r entry; do
         case "$entry" in
@@ -185,8 +254,24 @@ unpack_snapshot() {
 }
 
 verify_unpacked() {
-    local root="$1" expected file actual
+    local root="$1" expected file actual relative duplicates declared_count actual_count checksum_count
     jq -e '.schema_version == 1 and .kind == "mac-dotfiles-recovery" and .secrets_included == false' "$root/manifest.json" >/dev/null || die "Unsupported or invalid recovery manifest"
+    declared_count="$(jq -r '.file_count' "$root/manifest.json")"
+    actual_count="$(awk 'NF {count++} END {print count+0}' "$root/files.txt")"
+    [[ "$declared_count" =~ ^[0-9]+$ && "$declared_count" -eq "$actual_count" ]] || die "Recovery manifest file count does not match its payload"
+    duplicates="$(sort "$root/files.txt" | uniq -d)"
+    [[ -z "$duplicates" ]] || die "Duplicate recovery target: $(head -n 1 <<<"$duplicates")"
+    while IFS= read -r relative; do
+        [[ -n "$relative" ]] || continue
+        is_allowed_relative "$relative" || die "Recovery target is outside the allowlist: $relative"
+        [[ -f "$root/payload/$relative" && ! -L "$root/payload/$relative" ]] || die "Recovery payload must be a regular file: $relative"
+        awk -v path="payload/$relative" '$2 == path {found++} END {exit found == 1 ? 0 : 1}' "$root/checksums.sha256" || die "Missing or duplicate checksum: payload/$relative"
+    done <"$root/files.txt"
+    for file in inventory/brew-formulae.txt inventory/brew-casks.txt; do
+        awk -v path="$file" '$2 == path {found++} END {exit found == 1 ? 0 : 1}' "$root/checksums.sha256" || die "Missing or duplicate checksum: $file"
+    done
+    checksum_count="$(awk 'NF {count++} END {print count+0}' "$root/checksums.sha256")"
+    [[ "$checksum_count" -eq $((actual_count + 2)) ]] || die "Recovery checksum catalog contains unexpected entries"
     while read -r expected file; do
         [[ -n "$file" && -f "$root/$file" ]] || die "Snapshot payload is incomplete: $file"
         actual="$(sha256_file "$root/$file")"
@@ -195,14 +280,13 @@ verify_unpacked() {
 }
 
 with_unpacked() {
-    local snapshot="$1" callback="$2" work status=0
+    local snapshot="$1" callback="$2" work
     shift 2
-    work="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-recovery-read.XXXXXX")"
+    new_temp_dir mac-dotfiles-recovery-read
+    work="$NEW_TEMP_DIR"
     unpack_snapshot "$snapshot" "$work"
     verify_unpacked "$work"
-    "$callback" "$work" "$snapshot" "$@" || status=$?
-    rm -rf "$work"
-    return "$status"
+    "$callback" "$work" "$snapshot" "$@"
 }
 
 inspect_unpacked() {

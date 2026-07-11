@@ -279,7 +279,9 @@ mac-dotfiles.sh recovery restore ~/Documents/mac-recovery.tar.gz.enc --yes
 
 Snapshots use a versioned manifest and SHA-256 checksums. They contain an explicit allowlist of managed configuration, the active schema/profile metadata, and Homebrew inventories. Passwords, tokens, SSH keys, browser data, and application data are excluded. `--encrypt` uses AES-256-CBC with PBKDF2 and asks for a password without storing it.
 
-Restore verifies every checksum before showing its plan. It preserves the current files under `~/.local/state/mac-dotfiles/recovery-rollbacks/`, restores atomically under the shared operation lock, and rolls back automatically if a file cannot be replaced. Homebrew inventories remain advisory; convergence performs package reconciliation afterward.
+For non-interactive automation, point `MAC_DOTFILES_RECOVERY_PASSWORD_FILE` to a permission-restricted file; OpenSSL reads the password from that file and its value never appears in the process arguments. Snapshots and rollback artifacts are created with owner-only permissions, snapshot writes are atomic, and verification rejects duplicate/missing checksums, mismatched manifests, unsafe archive paths, symlink payloads, and any restore target outside the documented allowlist.
+
+Restore verifies every checksum before showing its plan. It preserves the current files under `~/.local/state/mac-dotfiles/recovery-rollbacks/`, restores transactionally under the shared operation lock, and rolls back automatically if a file cannot be replaced. Homebrew inventories remain advisory; convergence performs package reconciliation afterward.
 
 #### Edit configuration files
 ```bash
