@@ -89,6 +89,10 @@ MIGRATE
 #!/usr/bin/env bash
 printf 'certify-engine %s\n' "$*"
 CERTIFY
+    cat >"$env_dir/home/.local/bin/mac-dotfiles-recovery.sh" <<'RECOVERY'
+#!/usr/bin/env bash
+printf 'recovery-engine %s\n' "$*"
+RECOVERY
 
     cat >"$env_dir/bin/chezmoi" <<'CHEZ'
 #!/usr/bin/env bash
@@ -127,6 +131,7 @@ BREW
         "$env_dir/home/.local/bin/mac-dotfiles-converge.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-migrate.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-certify.sh" \
+        "$env_dir/home/.local/bin/mac-dotfiles-recovery.sh" \
         "$env_dir/bin/chezmoi" \
         "$env_dir/bin/brew"
 
@@ -198,6 +203,9 @@ test_direct_commands() {
 
     output="$(run_launcher "$env_dir" certify --json --skip-live)"
     assert_contains "$output" "certify-engine --json --skip-live" "certify command should forward arguments"
+
+    output="$(run_launcher "$env_dir" recovery restore backup.tar.gz --dry-run)"
+    assert_contains "$output" "recovery-engine restore backup.tar.gz --dry-run" "recovery command should forward arguments"
 }
 
 test_menu_exit() {

@@ -238,6 +238,7 @@ The launcher provides a compact numbered menu for common actions:
 - inspect and restore convergence transactions
 - inspect/apply repository schema migrations
 - generate a reproducible certification attestation
+- create, inspect, verify, and transactionally restore disaster-recovery snapshots
 
 You can also call commands directly:
 ```bash
@@ -258,9 +259,27 @@ mac-dotfiles.sh tx-rollback latest --yes
 mac-dotfiles.sh migrate plan --json
 mac-dotfiles.sh migrate apply
 mac-dotfiles.sh certify --markdown --output ~/mac-dotfiles-certification.md
+mac-dotfiles.sh recovery create --encrypt
+mac-dotfiles.sh recovery list
+mac-dotfiles.sh recovery inspect /path/to/snapshot.tar.gz.enc
+mac-dotfiles.sh recovery restore /path/to/snapshot.tar.gz.enc --dry-run
 ```
 
 Use `mac-dotfiles.sh repair` after the initial install whenever you want to put the Mac back into the expected state. It fast-forwards the desired-state source, runs a confirmed transactional convergence, applies safe doctor auto-fixes, and writes `~/mac-dotfiles-repair-report.md`.
+
+#### Create and restore a disaster-recovery snapshot
+
+```bash
+mac-dotfiles.sh recovery create
+mac-dotfiles.sh recovery create --encrypt --output ~/Documents/mac-recovery.tar.gz.enc
+mac-dotfiles.sh recovery verify ~/Documents/mac-recovery.tar.gz.enc
+mac-dotfiles.sh recovery restore ~/Documents/mac-recovery.tar.gz.enc --dry-run
+mac-dotfiles.sh recovery restore ~/Documents/mac-recovery.tar.gz.enc --yes
+```
+
+Snapshots use a versioned manifest and SHA-256 checksums. They contain an explicit allowlist of managed configuration, the active schema/profile metadata, and Homebrew inventories. Passwords, tokens, SSH keys, browser data, and application data are excluded. `--encrypt` uses AES-256-CBC with PBKDF2 and asks for a password without storing it.
+
+Restore verifies every checksum before showing its plan. It preserves the current files under `~/.local/state/mac-dotfiles/recovery-rollbacks/`, restores atomically under the shared operation lock, and rolls back automatically if a file cannot be replaced. Homebrew inventories remain advisory; convergence performs package reconciliation afterward.
 
 #### Edit configuration files
 ```bash
@@ -374,6 +393,7 @@ brew bundle --global --verbose
 - `dot_local/bin/executable_mac-dotfiles-converge.sh.tmpl` - Profile, plan, drift, transaction, validation, and rollback engine
 - `dot_local/bin/executable_mac-dotfiles-migrate.sh.tmpl` - Versioned schema migration planner and runner
 - `dot_local/bin/executable_mac-dotfiles-certify.sh.tmpl` - Versioned repository and live-machine certification attestation
+- `dot_local/bin/executable_mac-dotfiles-recovery.sh.tmpl` - Portable, optionally encrypted disaster-recovery snapshots and transactional restore
 - `run_onchange_configure-dock-darwin.sh.tmpl` - Dock configuration reapplied when its desired values change
 - `run_onchange_configure-finder-and-inputs-darwin.sh` - Finder and input comfort defaults, reapplied when the baseline changes
 - `run_onchange_harden-macos-baseline-darwin.sh` - macOS hardening baseline, reapplied when the baseline changes

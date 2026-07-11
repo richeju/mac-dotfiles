@@ -13,6 +13,7 @@ MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-maintenance.sh"
 CONVERGE_SCRIPT="$HOME/.local/bin/mac-dotfiles-converge.sh"
 MIGRATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-migrate.sh"
 CERTIFY_SCRIPT="$HOME/.local/bin/mac-dotfiles-certify.sh"
+RECOVERY_SCRIPT="$HOME/.local/bin/mac-dotfiles-recovery.sh"
 
 usage() {
     cat <<'USAGE'
@@ -40,6 +41,7 @@ Commands:
   tx-rollback   Restore a convergence transaction snapshot
   migrate       Show, plan, apply, or check versioned migrations
   certify       Generate a reproducible machine certification attestation
+  recovery      Create, inspect, verify, or restore recovery snapshots
   help          Show this help
 USAGE
 }
@@ -174,6 +176,7 @@ mac-dotfiles
 15. Manage machine profile
 16. Show/apply schema migrations
 17. Certify this Mac
+18. Disaster recovery snapshots
 0. Exit
 
 MENU
@@ -205,6 +208,7 @@ run_menu() {
             15) run_profile_menu ;;
             16) run_if_executable "$MIGRATE_SCRIPT" plan ;;
             17) run_if_executable "$CERTIFY_SCRIPT" ;;
+            18) run_if_executable "$RECOVERY_SCRIPT" list ;;
             0 | q | quit | exit)
                 echo "Bye."
                 return 0
@@ -244,6 +248,7 @@ case "$command" in
     tx-rollback) run_convergence_command rollback "$@" ;;
     migrate) run_if_executable "$MIGRATE_SCRIPT" "$@" ;;
     certify) run_if_executable "$CERTIFY_SCRIPT" "$@" ;;
+    recovery) run_if_executable "$RECOVERY_SCRIPT" "$@" ;;
     help | -h | --help) usage ;;
     *)
         echo "Unknown command: $command" >&2
