@@ -433,9 +433,38 @@ echo ""
 echo "🏠 Setting up dotfiles with chezmoi..."
 echo ""
 
+repair_missing_chezmoi_upstream() {
+    local source_dir="$HOME/.local/share/chezmoi"
+    local default_remote default_branch
+
+    git -C "$source_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+    git -C "$source_dir" fetch origin --prune >/dev/null 2>&1 || return 0
+    git -C "$source_dir" rev-parse --verify '@{upstream}' >/dev/null 2>&1 && return 0
+
+    if [[ -n "$(git -C "$source_dir" status --porcelain)" ]]; then
+        log_error "Chezmoi source tracks a missing branch and has local changes; refusing to switch branches"
+    fi
+
+    default_remote="$(git -C "$source_dir" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+    if [[ -z "$default_remote" ]] && git -C "$source_dir" show-ref --verify --quiet refs/remotes/origin/main; then
+        default_remote="origin/main"
+    fi
+    [[ -n "$default_remote" ]] || log_error "Unable to determine the default branch for the chezmoi source"
+    default_branch="${default_remote#origin/}"
+
+    log_warning "Current chezmoi branch no longer exists on origin; switching to $default_branch"
+    if git -C "$source_dir" show-ref --verify --quiet "refs/heads/$default_branch"; then
+        git -C "$source_dir" switch "$default_branch" >/dev/null
+    else
+        git -C "$source_dir" switch --track -c "$default_branch" "$default_remote" >/dev/null
+    fi
+    git -C "$source_dir" branch --set-upstream-to="$default_remote" "$default_branch" >/dev/null
+}
+
 if [ -d "$HOME/.local/share/chezmoi" ]; then
     log_warning "Chezmoi already initialized"
     log_info "Syncing and applying existing dotfiles..."
+    repair_missing_chezmoi_upstream
     chezmoi update --apply --force --no-tty </dev/null
     DOTFILES_APPLIED="true"
 else
