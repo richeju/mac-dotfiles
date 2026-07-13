@@ -230,6 +230,31 @@ GIT
     assert_contains "$output" "chezmoi-update-apply-called" "installer should continue applying after branch recovery"
 }
 
+test_install_summary_does_not_treat_outdated_packages_as_missing() {
+    local env_dir run_output status output
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
+    cat >"$env_dir/bin/brew" <<'BREW'
+#!/usr/bin/env bash
+case "$1" in
+  --prefix) echo "/opt/homebrew" ;;
+  list) [[ "${2:-}" == "chezmoi" ]] ;;
+  bundle)
+    [[ " $* " == *" check "* && " $* " == *" --no-upgrade "* ]]
+    ;;
+esac
+BREW
+    chmod +x "$env_dir/bin/brew"
+
+    run_output="$(run_install "$env_dir")"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
+
+    assert_exit_code "$status" 0 "outdated-only Homebrew state should not fail bootstrap"
+    assert_contains "$output" "Homebrew bundle satisfied" "summary should check presence without requiring upgrades"
+    assert_not_contains "$output" "missing or outdated items" "summary should leave upgrades to maintenance"
+}
+
 test_minimal_mode_skips_bundle_summary() {
     local env_dir run_output status output
     env_dir="$(setup_env)"
@@ -279,6 +304,7 @@ main() {
     test_verify_reports_missing_homebrew
     test_existing_chezmoi_runs_update_apply
     test_existing_chezmoi_recovers_deleted_tracking_branch
+    test_install_summary_does_not_treat_outdated_packages_as_missing
     test_minimal_mode_skips_bundle_summary
     test_auto_init_uses_supported_chezmoi_flags_and_profile
     test_unknown_profile_is_rejected

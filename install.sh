@@ -184,7 +184,7 @@ run_verify() {
 
         if [[ -f "$HOME/.Brewfile" ]]; then
             verify_ok "Homebrew global Brewfile exists: $HOME/.Brewfile"
-            if brew bundle check --global --quiet; then
+            if brew bundle check --global --no-upgrade --quiet; then
                 verify_ok "Homebrew global Brewfile dependencies are satisfied"
             else
                 verify_warn "Homebrew global Brewfile has missing or outdated dependencies"
@@ -354,7 +354,7 @@ print_install_summary() {
     if [[ "$MINIMAL_MODE" == "true" ]]; then
         summary_ok "Full Homebrew bundle skipped for minimal setup"
     elif command -v brew >/dev/null 2>&1 && [[ -f "$HOME/.Brewfile" ]]; then
-        if brew bundle check --global --quiet >/dev/null 2>&1; then
+        if brew bundle check --global --no-upgrade --quiet >/dev/null 2>&1; then
             summary_ok "Homebrew bundle satisfied"
         else
             summary_warn "Homebrew bundle still has missing or outdated items"
