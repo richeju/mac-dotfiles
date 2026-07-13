@@ -194,6 +194,67 @@ test_existing_chezmoi_runs_update_apply() {
     assert_not_contains "$output" "mac-dotfiles\n============" "install should not open the interactive launcher"
 }
 
+test_existing_chezmoi_recovers_deleted_tracking_branch() {
+    local env_dir run_output status output git_log
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
+    git_log="$env_dir/git.log"
+    cat >"$env_dir/bin/git" <<'GIT'
+#!/usr/bin/env bash
+echo "$*" >>"$GIT_TEST_LOG"
+if [[ "$1" == "-C" ]]; then
+  shift 2
+fi
+case "$1 $2" in
+  "rev-parse --is-inside-work-tree") exit 0 ;;
+  "fetch origin") exit 0 ;;
+  "rev-parse --verify") exit 1 ;;
+  "status --porcelain") exit 0 ;;
+  "symbolic-ref --quiet") echo origin/main; exit 0 ;;
+  "show-ref --verify") exit 0 ;;
+  "switch main") exit 0 ;;
+  "branch --set-upstream-to=origin/main") exit 0 ;;
+esac
+exit 0
+GIT
+    chmod +x "$env_dir/bin/git"
+
+    set +e
+    output="$(printf 'stdin-sentinel-from-pipe\n' | HOME="$env_dir/home" GIT_TEST_LOG="$git_log" PATH="$env_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin" OSTYPE=darwin23 MAC_DOTFILES_SKIP_BREW_PATH_DETECTION=1 bash "$INSTALL_SCRIPT" 2>&1)"
+    status=$?
+    set -e
+
+    assert_exit_code "$status" 0 "install should recover when the tracked source branch was deleted"
+    assert_contains "$output" "branch no longer exists on origin; switching to main" "installer should explain deleted-branch recovery"
+    assert_contains "$(cat "$git_log")" "switch main" "installer should switch the source to main"
+    assert_contains "$output" "chezmoi-update-apply-called" "installer should continue applying after branch recovery"
+}
+
+test_install_summary_does_not_treat_outdated_packages_as_missing() {
+    local env_dir run_output status output
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
+    cat >"$env_dir/bin/brew" <<'BREW'
+#!/usr/bin/env bash
+case "$1" in
+  --prefix) echo "/opt/homebrew" ;;
+  list) [[ "${2:-}" == "chezmoi" ]] ;;
+  bundle)
+    [[ " $* " == *" check "* && " $* " == *" --no-upgrade "* ]]
+    ;;
+esac
+BREW
+    chmod +x "$env_dir/bin/brew"
+
+    run_output="$(run_install "$env_dir")"
+    status="$(parse_status "$run_output")"
+    output="$(strip_status_line "$run_output")"
+
+    assert_exit_code "$status" 0 "outdated-only Homebrew state should not fail bootstrap"
+    assert_contains "$output" "Homebrew bundle satisfied" "summary should check presence without requiring upgrades"
+    assert_not_contains "$output" "missing or outdated items" "summary should leave upgrades to maintenance"
+}
+
 test_minimal_mode_skips_bundle_summary() {
     local env_dir run_output status output
     env_dir="$(setup_env)"
@@ -242,6 +303,8 @@ main() {
     test_verify_happy_path
     test_verify_reports_missing_homebrew
     test_existing_chezmoi_runs_update_apply
+    test_existing_chezmoi_recovers_deleted_tracking_branch
+    test_install_summary_does_not_treat_outdated_packages_as_missing
     test_minimal_mode_skips_bundle_summary
     test_auto_init_uses_supported_chezmoi_flags_and_profile
     test_unknown_profile_is_rejected
