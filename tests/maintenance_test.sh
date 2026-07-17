@@ -16,6 +16,11 @@ setup_env() {
     cat >"$env_dir/home/.local/bin/mac-dotfiles-brew-maintenance.sh" <<'SCRIPT'
 run_brew_maintenance() { echo "brew-maintenance-called"; }
 SCRIPT
+    cat >"$env_dir/home/.local/bin/mac-dotfiles-watchdog.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "watchdog-called:${MAC_DOTFILES_MAINTENANCE_EXIT_STATUS:-missing}"
+SCRIPT
+    chmod +x "$env_dir/home/.local/bin/mac-dotfiles-watchdog.sh"
     echo "$env_dir"
 }
 
@@ -36,6 +41,7 @@ SCRIPT
     [[ "$output" == *"chezmoi-called"* ]] || fail "maintenance should find chezmoi from its managed PATH"
     [[ "$output" == *"brew-maintenance-called"* ]] || fail "maintenance should run Homebrew work"
     [[ "$output" == *"Maintenance completed"* ]] || fail "maintenance should report success after doing work"
+    [[ "$output" == *"watchdog-called:0"* ]] || fail "successful maintenance should update watchdog health"
 }
 
 test_no_available_work_fails() {
@@ -48,6 +54,7 @@ test_no_available_work_fails() {
     [[ "$status" -eq 1 ]] || fail "maintenance should fail when no task can run"
     [[ "$output" == *"No maintenance task could run"* ]] || fail "maintenance should explain the failure"
     [[ "$output" != *"Maintenance completed"* ]] || fail "maintenance must not report a false success"
+    [[ "$output" == *"watchdog-called:1"* ]] || fail "failed maintenance should reach the watchdog"
 }
 
 test_launchd_path_finds_managed_tools

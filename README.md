@@ -132,6 +132,18 @@ Repository evolution is handled by sequential, idempotent scripts under `migrati
 
 For a stronger release or machine check, `mac-dotfiles.sh certify` runs the full test suite, formatting and static analysis, profile rendering, migration-catalog validation, transaction fault injection, and live idempotence validation. It writes a versioned JSON attestation to `~/.local/state/mac-dotfiles/certifications/`; use `--skip-live` for CI or a repository-only check.
 
+The proactive watchdog runs after scheduled maintenance and records a versioned health state under `~/.local/state/mac-dotfiles/watchdog/state.json`. It monitors desired-state drift, certification age/result, recovery snapshot age, and maintenance freshness. Native macOS notifications are emitted only when severity changes, when an unresolved alert exceeds its six-hour cooldown, or when the machine returns to healthy.
+
+```bash
+mac-dotfiles.sh status                 # latest human-readable health state
+mac-dotfiles.sh status --json          # machine-readable state
+mac-dotfiles.sh watch run              # evaluate now and notify if needed
+mac-dotfiles.sh watch run --no-notify  # evaluate silently
+mac-dotfiles.sh watch test warning     # send a sample notification
+```
+
+Default freshness thresholds are 7 days for certification, 30 days for recovery snapshots, and 2 days for maintenance. They can be overridden with `MAC_DOTFILES_CERTIFICATION_MAX_AGE_SECONDS`, `MAC_DOTFILES_SNAPSHOT_MAX_AGE_SECONDS`, `MAC_DOTFILES_MAINTENANCE_MAX_AGE_SECONDS`, and `MAC_DOTFILES_WATCHDOG_COOLDOWN_SECONDS`.
+
 ## ⚙️ Automatic Configurations
 
 ### Git Configuration
@@ -187,6 +199,7 @@ Daily automatic tasks (via macOS LaunchAgent):
 - Cleanup old versions
 - System diagnostics
 - Cache statistics
+- Proactive health evaluation and transition-based native notifications
 - Scheduled every day at 04:00
 
 You can disable the automatic dotfiles sync by setting `AUTO_CHEZMOI_UPDATE=0` before running the maintenance script manually.
@@ -239,6 +252,7 @@ The launcher provides a compact numbered menu for common actions:
 - inspect/apply repository schema migrations
 - generate a reproducible certification attestation
 - create, inspect, verify, and transactionally restore disaster-recovery snapshots
+- inspect or run the proactive health watchdog
 
 You can also call commands directly:
 ```bash
@@ -263,6 +277,8 @@ mac-dotfiles.sh recovery create --encrypt
 mac-dotfiles.sh recovery list
 mac-dotfiles.sh recovery inspect /path/to/snapshot.tar.gz.enc
 mac-dotfiles.sh recovery restore /path/to/snapshot.tar.gz.enc --dry-run
+mac-dotfiles.sh status
+mac-dotfiles.sh watch run --no-notify
 ```
 
 Use `mac-dotfiles.sh repair` after the initial install whenever you want to put the Mac back into the expected state. It fast-forwards the desired-state source, runs a confirmed transactional convergence, applies safe doctor auto-fixes, and writes `~/mac-dotfiles-repair-report.md`.
@@ -396,6 +412,7 @@ brew bundle --global --verbose
 - `dot_local/bin/executable_mac-dotfiles-migrate.sh.tmpl` - Versioned schema migration planner and runner
 - `dot_local/bin/executable_mac-dotfiles-certify.sh.tmpl` - Versioned repository and live-machine certification attestation
 - `dot_local/bin/executable_mac-dotfiles-recovery.sh.tmpl` - Portable, optionally encrypted disaster-recovery snapshots and transactional restore
+- `dot_local/bin/executable_mac-dotfiles-watchdog.sh.tmpl` - Proactive health state, cooldown, and native macOS notifications
 - `run_onchange_configure-dock-darwin.sh.tmpl` - Dock configuration reapplied when its desired values change
 - `run_onchange_configure-finder-and-inputs-darwin.sh` - Finder and input comfort defaults, reapplied when the baseline changes
 - `run_onchange_harden-macos-baseline-darwin.sh` - macOS hardening baseline, reapplied when the baseline changes

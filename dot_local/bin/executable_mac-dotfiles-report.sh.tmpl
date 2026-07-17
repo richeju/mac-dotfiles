@@ -12,6 +12,7 @@ TRANSACTIONS_DIR="$STATE_DIR/transactions"
 MIGRATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-migrate.sh"
 LATEST_CERTIFICATION="$STATE_DIR/certifications/latest.json"
 RECOVERY_DIR="$STATE_DIR/recovery-snapshots"
+WATCHDOG_STATE="$STATE_DIR/watchdog/state.json"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-report.XXXXXX")"
 
 cleanup() {
@@ -250,6 +251,11 @@ if [[ -n "$latest_recovery" ]]; then
     echo "- Latest recovery snapshot: $(basename "$latest_recovery") ($(du -h "$latest_recovery" | awk '{print $1}'))"
 else
     echo "- Latest recovery snapshot: none"
+fi
+if [[ -f "$WATCHDOG_STATE" ]]; then
+    echo "- Watchdog: $(jq -r '"\(.status) (\(.updated_at))"' "$WATCHDOG_STATE" 2>/dev/null || echo invalid)"
+else
+    echo "- Watchdog: no state recorded"
 fi
 
 echo
