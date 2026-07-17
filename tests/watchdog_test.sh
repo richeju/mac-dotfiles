@@ -25,7 +25,17 @@ ENGINE
 echo "$*" >>"$WATCHDOG_TEST_ROOT/notifications.log"
 cat >/dev/null
 OSASCRIPT
-    chmod +x "$root/home/.local/bin/mac-dotfiles-converge.sh" "$root/bin/osascript"
+    cat >"$root/bin/stat" <<'STAT'
+#!/usr/bin/env bash
+if [[ "$1" == "-f" ]]; then
+  echo "gnu-stat-probe-output"
+  exit 1
+fi
+if [[ "$1" == "-c" ]]; then
+  echo "$MAC_DOTFILES_WATCHDOG_NOW"
+fi
+STAT
+    chmod +x "$root/home/.local/bin/mac-dotfiles-converge.sh" "$root/bin/osascript" "$root/bin/stat"
     echo '{"overall":"pass"}' >"$root/state/certifications/latest.json"
     echo snapshot >"$root/state/recovery-snapshots/mac-dotfiles-test.tar.gz"
     echo maintenance >"$root/state/maintenance.log"
