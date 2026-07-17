@@ -10,6 +10,7 @@ LOG_FILE="$LOG_DIR/maintenance.log"
 LOCK_DIR="$LOG_DIR/operation.lock"
 AUTO_CHEZMOI_UPDATE="${AUTO_CHEZMOI_UPDATE:-1}"
 BREW_MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-brew-maintenance.sh"
+WATCHDOG_SCRIPT="$HOME/.local/bin/mac-dotfiles-watchdog.sh"
 maintenance_work_done=0
 
 mkdir -p "$LOG_DIR"
@@ -24,7 +25,17 @@ cleanup_lock() {
     rm -f "$LOCK_DIR/pid"
     rmdir "$LOCK_DIR" 2>/dev/null || true
 }
-trap cleanup_lock EXIT
+
+maintenance_exit() {
+    local exit_status=$?
+    cleanup_lock
+    trap - EXIT
+    if [[ -x "$WATCHDOG_SCRIPT" ]]; then
+        MAC_DOTFILES_MAINTENANCE_EXIT_STATUS="$exit_status" "$WATCHDOG_SCRIPT" run || true
+    fi
+    exit "$exit_status"
+}
+trap maintenance_exit EXIT
 
 exec > >(tee -a "$LOG_FILE") 2>&1
 

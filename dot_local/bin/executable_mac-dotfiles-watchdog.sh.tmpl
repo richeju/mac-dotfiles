@@ -1,0 +1,265 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+export PATH="${MAC_DOTFILES_PATH:-$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin}"
+
+STATE_DIR="${MAC_DOTFILES_STATE_DIR:-$HOME/.local/state/mac-dotfiles}"
+WATCHDOG_DIR="$STATE_DIR/watchdog"
+STATE_FILE="$WATCHDOG_DIR/state.json"
+CHECKS_FILE=""
+CONVERGE_SCRIPT="${MAC_DOTFILES_CONVERGE_SCRIPT:-$HOME/.local/bin/mac-dotfiles-converge.sh}"
+CERTIFICATION_FILE="$STATE_DIR/certifications/latest.json"
+RECOVERY_DIR="$STATE_DIR/recovery-snapshots"
+MAINTENANCE_LOG="$STATE_DIR/maintenance.log"
+COOLDOWN_SECONDS="${MAC_DOTFILES_WATCHDOG_COOLDOWN_SECONDS:-21600}"
+CERTIFICATION_MAX_AGE="${MAC_DOTFILES_CERTIFICATION_MAX_AGE_SECONDS:-604800}"
+SNAPSHOT_MAX_AGE="${MAC_DOTFILES_SNAPSHOT_MAX_AGE_SECONDS:-2592000}"
+MAINTENANCE_MAX_AGE="${MAC_DOTFILES_MAINTENANCE_MAX_AGE_SECONDS:-172800}"
+NOTIFY=1
+JSON_MODE=0
+WORK_DIR=""
+
+cleanup() { [[ -z "$WORK_DIR" ]] || rm -rf "$WORK_DIR"; }
+trap cleanup EXIT
+
+usage() {
+    cat <<'USAGE'
+Usage: mac-dotfiles-watchdog.sh COMMAND [OPTIONS]
+
+Commands:
+  run [--json] [--no-notify]  Evaluate health and update watchdog state.
+  status [--json]             Show the last recorded watchdog state.
+  test [healthy|warning|critical]
+                              Send a sample native notification.
+USAGE
+}
+
+die() {
+    echo "✗ $1" >&2
+    exit "${2:-1}"
+}
+
+now_epoch() { echo "${MAC_DOTFILES_WATCHDOG_NOW:-$(date '+%s')}"; }
+
+file_mtime() {
+    stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1" 2>/dev/null
+}
+
+age_seconds() {
+    local modified
+    modified="$(file_mtime "$1")" || return 1
+    echo "$(($(now_epoch) - modified))"
+}
+
+record_check() {
+    local name="$1" status="$2" detail="$3"
+    jq -nc --arg name "$name" --arg status "$status" --arg detail "$detail" \
+        '{name:$name,status:$status,detail:$detail}' >>"$CHECKS_FILE"
+}
+
+check_desired_state() {
+    local plan
+    if [[ ! -x "$CONVERGE_SCRIPT" ]]; then
+        record_check desired-state warning "convergence engine is unavailable"
+        return
+    fi
+    if ! plan="$($CONVERGE_SCRIPT plan --json 2>/dev/null)"; then
+        record_check desired-state critical "desired-state inspection failed"
+    elif jq -e '.drift == false' >/dev/null 2>&1 <<<"$plan"; then
+        record_check desired-state healthy "machine matches desired state"
+    else
+        record_check desired-state critical "configuration drift detected"
+    fi
+}
+
+check_certification() {
+    local age overall
+    if [[ ! -f "$CERTIFICATION_FILE" ]]; then
+        record_check certification warning "no certification attestation found"
+        return
+    fi
+    overall="$(jq -r '.overall // "invalid"' "$CERTIFICATION_FILE" 2>/dev/null || echo invalid)"
+    if [[ "$overall" != "pass" ]]; then
+        record_check certification critical "latest certification is $overall"
+        return
+    fi
+    age="$(age_seconds "$CERTIFICATION_FILE")" || {
+        record_check certification warning "certification age is unavailable"
+        return
+    }
+    if ((age > CERTIFICATION_MAX_AGE)); then
+        record_check certification warning "certification is older than $((CERTIFICATION_MAX_AGE / 86400)) days"
+    else
+        record_check certification healthy "latest certification passed"
+    fi
+}
+
+latest_snapshot() {
+    find "$RECOVERY_DIR" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tar.gz.enc' \) -print 2>/dev/null | sort | tail -n 1
+}
+
+check_recovery_snapshot() {
+    local snapshot age
+    snapshot="$(latest_snapshot || true)"
+    if [[ -z "$snapshot" ]]; then
+        record_check recovery-snapshot warning "no recovery snapshot found"
+        return
+    fi
+    age="$(age_seconds "$snapshot")" || {
+        record_check recovery-snapshot warning "snapshot age is unavailable"
+        return
+    }
+    if ((age > SNAPSHOT_MAX_AGE)); then
+        record_check recovery-snapshot warning "latest snapshot is older than $((SNAPSHOT_MAX_AGE / 86400)) days"
+    else
+        record_check recovery-snapshot healthy "recovery snapshot is recent"
+    fi
+}
+
+check_maintenance() {
+    local age exit_status="${MAC_DOTFILES_MAINTENANCE_EXIT_STATUS:-0}"
+    if [[ "$exit_status" != "0" ]]; then
+        record_check maintenance critical "maintenance exited with status $exit_status"
+        return
+    fi
+    if [[ ! -f "$MAINTENANCE_LOG" ]]; then
+        record_check maintenance warning "maintenance has not produced a log"
+        return
+    fi
+    age="$(age_seconds "$MAINTENANCE_LOG")" || {
+        record_check maintenance warning "maintenance age is unavailable"
+        return
+    }
+    if ((age > MAINTENANCE_MAX_AGE)); then
+        record_check maintenance warning "maintenance has not run in $((MAINTENANCE_MAX_AGE / 86400)) days"
+    else
+        record_check maintenance healthy "maintenance log is recent"
+    fi
+}
+
+overall_status() {
+    if jq -se 'any(.status == "critical")' "$CHECKS_FILE" >/dev/null 2>&1; then
+        echo critical
+    elif jq -se 'any(.status == "warning")' "$CHECKS_FILE" >/dev/null 2>&1; then
+        echo warning
+    else
+        echo healthy
+    fi
+}
+
+status_message() {
+    local status="$1" problems
+    problems="$(jq -sr '[.[] | select(.status != "healthy") | .name] | join(", ")' "$CHECKS_FILE")"
+    case "$status" in
+        healthy) echo "All monitored checks are healthy." ;;
+        warning) echo "Attention recommended: $problems." ;;
+        critical) echo "Action required: $problems." ;;
+    esac
+}
+
+send_notification() {
+    local status="$1" message="$2" title
+    title="mac-dotfiles — $status"
+    if command -v osascript >/dev/null 2>&1; then
+        osascript - "$title" "$message" <<'APPLESCRIPT' >/dev/null
+on run argv
+    display notification (item 2 of argv) with title (item 1 of argv)
+end run
+APPLESCRIPT
+    else
+        echo "$title: $message" >&2
+    fi
+}
+
+should_notify() {
+    local status="$1" previous_status="unknown" last_notified=0 now
+    now="$(now_epoch)"
+    if [[ -f "$STATE_FILE" ]]; then
+        previous_status="$(jq -r '.status // "unknown"' "$STATE_FILE" 2>/dev/null || echo unknown)"
+        last_notified="$(jq -r '.last_notified_at // 0' "$STATE_FILE" 2>/dev/null || echo 0)"
+    fi
+    [[ "$last_notified" =~ ^[0-9]+$ ]] || last_notified=0
+    [[ "$status" != "healthy" && ("$status" != "$previous_status" || $((now - last_notified)) -ge "$COOLDOWN_SECONDS") ]] ||
+        [[ "$status" == "healthy" && "$previous_status" != "healthy" && "$previous_status" != "unknown" ]]
+}
+
+render_text() {
+    jq -r '"mac-dotfiles watchdog: \(.status)\nUpdated: \(.updated_at)\n", (.checks[] | "  \(.status | ascii_upcase)\t\(.name) — \(.detail)")' "$1"
+}
+
+run_watchdog() {
+    local work status message notified=false previous_notified=0 now timestamp
+    while (($#)); do
+        case "$1" in
+            --json) JSON_MODE=1 ;;
+            --no-notify) NOTIFY=0 ;;
+            *) die "Unknown run option: $1" 2 ;;
+        esac
+        shift
+    done
+    command -v jq >/dev/null 2>&1 || die "jq is required"
+    mkdir -p "$WATCHDOG_DIR"
+    chmod 700 "$WATCHDOG_DIR"
+    work="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-watchdog.XXXXXX")"
+    WORK_DIR="$work"
+    CHECKS_FILE="$work/checks.jsonl"
+    : >"$CHECKS_FILE"
+    check_desired_state
+    check_certification
+    check_recovery_snapshot
+    check_maintenance
+    status="$(overall_status)"
+    message="$(status_message "$status")"
+    now="$(now_epoch)"
+    timestamp="$(date -u -r "$now" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$now" '+%Y-%m-%dT%H:%M:%SZ')"
+    [[ ! -f "$STATE_FILE" ]] || previous_notified="$(jq -r '.last_notified_at // 0' "$STATE_FILE" 2>/dev/null || echo 0)"
+    if [[ "$NOTIFY" -eq 1 ]] && should_notify "$status"; then
+        send_notification "$status" "$message"
+        notified=true
+        previous_notified="$now"
+    fi
+    jq -s \
+        --arg status "$status" --arg message "$message" --arg updated_at "$timestamp" \
+        --argjson updated_at_epoch "$now" --argjson last_notified_at "$previous_notified" --argjson notified "$notified" \
+        '{schema_version:1,status:$status,message:$message,updated_at:$updated_at,updated_at_epoch:$updated_at_epoch,last_notified_at:$last_notified_at,notified:$notified,checks:.}' \
+        "$CHECKS_FILE" >"$work/state.json"
+    mv "$work/state.json" "$STATE_FILE"
+    chmod 600 "$STATE_FILE"
+    if [[ "$JSON_MODE" -eq 1 ]]; then cat "$STATE_FILE"; else render_text "$STATE_FILE"; fi
+    rm -rf "$work"
+    WORK_DIR=""
+    [[ "$status" != "critical" ]]
+}
+
+show_status() {
+    case "${1:-}" in
+        "") ;;
+        --json) JSON_MODE=1 ;;
+        *) die "Unknown status option: $1" 2 ;;
+    esac
+    [[ -f "$STATE_FILE" ]] || die "No watchdog state found; run: mac-dotfiles.sh watch run"
+    if [[ "$JSON_MODE" -eq 1 ]]; then cat "$STATE_FILE"; else render_text "$STATE_FILE"; fi
+}
+
+test_notification() {
+    local status="${1:-warning}" message
+    case "$status" in
+        healthy) message="Test resolved notification: all checks are healthy." ;;
+        warning) message="Test warning: a recovery snapshot is getting old." ;;
+        critical) message="Test critical alert: desired-state validation failed." ;;
+        *) die "Unknown test status: $status" 2 ;;
+    esac
+    send_notification "$status" "$message"
+    echo "✓ Test notification sent: $status"
+}
+
+command="${1:-status}"
+shift || true
+case "$command" in
+    run) run_watchdog "$@" ;;
+    status) show_status "$@" ;;
+    test) test_notification "$@" ;;
+    help | -h | --help) usage ;;
+    *) die "Unknown watchdog command: $command" 2 ;;
+esac

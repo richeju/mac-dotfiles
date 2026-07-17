@@ -93,6 +93,10 @@ CERTIFY
 #!/usr/bin/env bash
 printf 'recovery-engine %s\n' "$*"
 RECOVERY
+    cat >"$env_dir/home/.local/bin/mac-dotfiles-watchdog.sh" <<'WATCHDOG'
+#!/usr/bin/env bash
+printf 'watchdog-engine %s\n' "$*"
+WATCHDOG
 
     cat >"$env_dir/bin/chezmoi" <<'CHEZ'
 #!/usr/bin/env bash
@@ -132,6 +136,7 @@ BREW
         "$env_dir/home/.local/bin/mac-dotfiles-migrate.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-certify.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-recovery.sh" \
+        "$env_dir/home/.local/bin/mac-dotfiles-watchdog.sh" \
         "$env_dir/bin/chezmoi" \
         "$env_dir/bin/brew"
 
@@ -206,6 +211,12 @@ test_direct_commands() {
 
     output="$(run_launcher "$env_dir" recovery restore backup.tar.gz --dry-run)"
     assert_contains "$output" "recovery-engine restore backup.tar.gz --dry-run" "recovery command should forward arguments"
+
+    output="$(run_launcher "$env_dir" status --json)"
+    assert_contains "$output" "watchdog-engine status --json" "status should route to watchdog state"
+
+    output="$(run_launcher "$env_dir" watch run --no-notify)"
+    assert_contains "$output" "watchdog-engine run --no-notify" "watch command should forward arguments"
 }
 
 test_menu_exit() {
