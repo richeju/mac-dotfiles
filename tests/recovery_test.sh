@@ -39,6 +39,16 @@ run_recovery() {
         bash "$RECOVERY_SCRIPT" "$@"
 }
 
+test_read_only_commands_without_temp_directories() {
+    local root output
+    root="$(mktemp -d)"
+    setup_env "$root"
+
+    output="$(run_recovery "$root" list)"
+    [[ "$output" == *"No snapshots found."* ]] || fail "empty snapshot list should succeed"
+    run_recovery "$root" help >/dev/null
+}
+
 test_create_verify_inspect_and_restore() {
     local root snapshot output
     root="$(mktemp -d)"
@@ -128,6 +138,7 @@ test_encrypted_round_trip() {
     fi
 }
 
+test_read_only_commands_without_temp_directories
 test_create_verify_inspect_and_restore
 test_corruption_is_rejected
 test_unsafe_archive_path_is_rejected
