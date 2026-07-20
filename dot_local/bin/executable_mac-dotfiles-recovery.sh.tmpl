@@ -48,9 +48,11 @@ sha256_file() {
 cleanup() {
     local path
     [[ "$LOCK_HELD" -eq 0 ]] || rm -rf "$LOCK_DIR"
-    for path in "${TEMP_DIRS[@]}"; do
-        rm -rf "$path"
-    done
+    if ((${#TEMP_DIRS[@]} > 0)); then
+        for path in "${TEMP_DIRS[@]}"; do
+            rm -rf "$path"
+        done
+    fi
     [[ -z "$PARTIAL_OUTPUT" ]] || rm -f "$PARTIAL_OUTPUT"
 }
 trap cleanup EXIT
