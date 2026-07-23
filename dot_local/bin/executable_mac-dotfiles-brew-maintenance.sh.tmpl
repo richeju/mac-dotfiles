@@ -12,7 +12,7 @@ run_brew_maintenance() {
     brew update
 
     echo "⬆️  Upgrading formulae..."
-    brew upgrade
+    brew upgrade --formula
 
     echo "⬆️  Upgrading casks..."
     if ! brew upgrade --cask --greedy; then
