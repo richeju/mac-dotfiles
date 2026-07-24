@@ -11,7 +11,7 @@ fail() {
 
 setup_env() {
     local root="$1" now="$2"
-    mkdir -p "$root/home/.local/bin" "$root/state/certifications" "$root/state/recovery-snapshots" "$root/bin"
+    mkdir -p "$root/home/.local/bin" "$root/state/certifications" "$root/state/recovery-snapshots" "$root/source" "$root/bin"
     cat >"$root/home/.local/bin/mac-dotfiles-converge.sh" <<'ENGINE'
 #!/usr/bin/env bash
 if [[ -f "$WATCHDOG_TEST_ROOT/drift" || "$(umask)" != "0022" ]]; then
@@ -20,6 +20,10 @@ else
   echo '{"drift":false}'
 fi
 ENGINE
+    cat >"$root/bin/git" <<'GIT'
+#!/usr/bin/env bash
+echo "${WATCHDOG_TEST_CURRENT_COMMIT:-test-commit}"
+GIT
     cat >"$root/bin/osascript" <<'OSASCRIPT'
 #!/usr/bin/env bash
 echo "$*" >>"$WATCHDOG_TEST_ROOT/notifications.log"
@@ -35,10 +39,12 @@ if [[ "$1" == "-c" ]]; then
   echo "$MAC_DOTFILES_WATCHDOG_NOW"
 fi
 STAT
-    chmod +x "$root/home/.local/bin/mac-dotfiles-converge.sh" "$root/bin/osascript" "$root/bin/stat"
-    echo '{"overall":"pass"}' >"$root/state/certifications/latest.json"
+    chmod +x "$root/home/.local/bin/mac-dotfiles-converge.sh" "$root/bin/git" "$root/bin/osascript" "$root/bin/stat"
+    echo '{"schema_version":1,"kind":"mac-dotfiles-certification","commit":"test-commit","overall":"pass"}' >"$root/state/certifications/latest.json"
     echo snapshot >"$root/state/recovery-snapshots/mac-dotfiles-test.tar.gz"
-    echo maintenance >"$root/state/maintenance.log"
+    echo '===== 2026-01-01 00:00:00 :: mac-dotfiles maintenance =====' >"$root/state/maintenance.log"
+    echo '✅ Maintenance completed' >>"$root/state/maintenance.log"
+    echo '{"schema_version":1,"exit_status":0}' >"$root/state/maintenance-status.json"
     : >"$root/notifications.log"
 }
 
@@ -47,9 +53,39 @@ run_watchdog() {
     shift 2
     HOME="$root/home" WATCHDOG_TEST_ROOT="$root" MAC_DOTFILES_STATE_DIR="$root/state" \
         MAC_DOTFILES_PATH="$root/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+        CHEZMOI_SOURCE_DIR="$root/source" \
         MAC_DOTFILES_CONVERGE_SCRIPT="$root/home/.local/bin/mac-dotfiles-converge.sh" \
         MAC_DOTFILES_WATCHDOG_NOW="$now" MAC_DOTFILES_WATCHDOG_COOLDOWN_SECONDS=60 \
         bash "$WATCHDOG_SCRIPT" "$@"
+}
+
+test_stale_certification_commit_warns() {
+    local root now
+    root="$(mktemp -d)"
+    now="$(date '+%s')"
+    setup_env "$root" "$now"
+    jq '.commit = "old-commit"' "$root/state/certifications/latest.json" >"$root/certification.json"
+    mv "$root/certification.json" "$root/state/certifications/latest.json"
+
+    run_watchdog "$root" "$now" run --no-notify >/dev/null
+    [[ "$(jq -r '.status' "$root/state/watchdog/state.json")" == "warning" ]] ||
+        fail "a certification for another commit should warn"
+    jq -e '.checks[] | select(.name == "certification" and .detail == "certification does not match current commit")' \
+        "$root/state/watchdog/state.json" >/dev/null || fail "commit mismatch should be explicit"
+}
+
+test_persisted_maintenance_failure_survives_manual_run() {
+    local root now
+    root="$(mktemp -d)"
+    now="$(date '+%s')"
+    setup_env "$root" "$now"
+    echo '{"schema_version":1,"exit_status":1}' >"$root/state/maintenance-status.json"
+
+    run_watchdog "$root" "$now" run --no-notify >/dev/null 2>&1 || true
+    [[ "$(jq -r '.status' "$root/state/watchdog/state.json")" == "critical" ]] ||
+        fail "a persisted maintenance failure should remain critical"
+    jq -e '.checks[] | select(.name == "maintenance" and .detail == "maintenance exited with status 1")' \
+        "$root/state/watchdog/state.json" >/dev/null || fail "persisted maintenance failure should be explicit"
 }
 
 test_transitions_and_cooldown() {
@@ -89,5 +125,7 @@ test_manual_notification() {
 }
 
 test_transitions_and_cooldown
+test_stale_certification_commit_warns
+test_persisted_maintenance_failure_survives_manual_run
 test_manual_notification
 echo "[PASS] watchdog tests completed"

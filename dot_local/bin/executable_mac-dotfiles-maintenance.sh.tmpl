@@ -7,6 +7,7 @@ export PATH="${MAC_DOTFILES_PATH:-$HOME/.local/bin:/opt/homebrew/bin:/opt/homebr
 
 LOG_DIR="$HOME/.local/state/mac-dotfiles"
 LOG_FILE="$LOG_DIR/maintenance.log"
+STATUS_FILE="$LOG_DIR/maintenance-status.json"
 LOCK_DIR="$LOG_DIR/operation.lock"
 AUTO_CHEZMOI_UPDATE="${AUTO_CHEZMOI_UPDATE:-1}"
 BREW_MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-brew-maintenance.sh"
@@ -26,10 +27,24 @@ cleanup_lock() {
     rmdir "$LOCK_DIR" 2>/dev/null || true
 }
 
+write_maintenance_status() {
+    local exit_status="$1" timestamp epoch temp
+    timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    epoch="$(date '+%s')"
+    temp="$STATUS_FILE.tmp.$$"
+    printf '{"schema_version":1,"exit_status":%d,"updated_at":"%s","updated_at_epoch":%d}\n' \
+        "$exit_status" "$timestamp" "$epoch" >"$temp"
+    chmod 600 "$temp"
+    mv "$temp" "$STATUS_FILE"
+}
+
 maintenance_exit() {
     local exit_status=$?
     cleanup_lock
     trap - EXIT
+    if ! write_maintenance_status "$exit_status"; then
+        echo "⚠️  Failed to persist maintenance status: $STATUS_FILE"
+    fi
     if [[ -x "$WATCHDOG_SCRIPT" ]]; then
         MAC_DOTFILES_MAINTENANCE_EXIT_STATUS="$exit_status" "$WATCHDOG_SCRIPT" run || true
     fi
