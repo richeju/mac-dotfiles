@@ -42,6 +42,9 @@ SCRIPT
     [[ "$output" == *"brew-maintenance-called"* ]] || fail "maintenance should run Homebrew work"
     [[ "$output" == *"Maintenance completed"* ]] || fail "maintenance should report success after doing work"
     [[ "$output" == *"watchdog-called:0"* ]] || fail "successful maintenance should update watchdog health"
+    jq -e '.schema_version == 1 and .exit_status == 0' \
+        "$env_dir/home/.local/state/mac-dotfiles/maintenance-status.json" >/dev/null ||
+        fail "successful maintenance should persist its status"
 }
 
 test_no_available_work_fails() {
@@ -55,6 +58,9 @@ test_no_available_work_fails() {
     [[ "$output" == *"No maintenance task could run"* ]] || fail "maintenance should explain the failure"
     [[ "$output" != *"Maintenance completed"* ]] || fail "maintenance must not report a false success"
     [[ "$output" == *"watchdog-called:1"* ]] || fail "failed maintenance should reach the watchdog"
+    jq -e '.schema_version == 1 and .exit_status == 1' \
+        "$env_dir/home/.local/state/mac-dotfiles/maintenance-status.json" >/dev/null ||
+        fail "failed maintenance should persist its status"
 }
 
 test_launchd_path_finds_managed_tools
