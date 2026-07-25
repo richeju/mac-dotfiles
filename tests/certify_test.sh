@@ -12,8 +12,11 @@ output="$(mktemp)"
 state_dir="$(mktemp -d)"
 trap 'rm -f "$output"; rm -rf "$state_dir"' EXIT
 
-CHEZMOI_SOURCE_DIR="$REPO_ROOT" MAC_DOTFILES_STATE_DIR="$state_dir" \
-    bash "$CERTIFIER" --json --skip-live --output "$output" >/dev/null
+(
+    cd "$state_dir"
+    CHEZMOI_SOURCE_DIR="$REPO_ROOT" MAC_DOTFILES_STATE_DIR="$state_dir" \
+        bash "$CERTIFIER" --json --skip-live --output "$output" >/dev/null
+)
 jq -e '.schema_version == 1 and .kind == "mac-dotfiles-certification" and .overall == "pass"' "$output" >/dev/null
 jq -e '[.checks[] | select(.status == "fail")] | length == 0' "$output" >/dev/null
 cmp -s "$output" "$state_dir/certifications/latest.json"
