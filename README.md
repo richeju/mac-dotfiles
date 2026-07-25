@@ -132,6 +132,8 @@ Repository evolution is handled by sequential, idempotent scripts under `migrati
 
 For a stronger release or machine check, `mac-dotfiles.sh certify` runs the full test suite, formatting and static analysis, profile rendering, migration-catalog validation, transaction fault injection, and live idempotence validation. It writes a versioned JSON attestation to `~/.local/state/mac-dotfiles/certifications/`; use `--skip-live` for CI or a repository-only check.
 
+Scheduled maintenance automatically runs repository-only certification after `chezmoi update` whenever the current commit does not already have a matching passing attestation. Unchanged certified commits skip this work. Certification failures are persisted as failed maintenance outcomes while Homebrew maintenance is still allowed to finish.
+
 The proactive watchdog runs after scheduled maintenance and records a versioned health state under `~/.local/state/mac-dotfiles/watchdog/state.json`. It monitors desired-state drift, certification age/result/commit, recovery snapshot age, and the persisted maintenance outcome and freshness under `~/.local/state/mac-dotfiles/maintenance-status.json`. Native macOS notifications are emitted only when severity changes, when an unresolved alert exceeds its six-hour cooldown, or when the machine returns to healthy.
 
 ```bash

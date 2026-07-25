@@ -9,10 +9,14 @@ LOG_DIR="$HOME/.local/state/mac-dotfiles"
 LOG_FILE="$LOG_DIR/maintenance.log"
 STATUS_FILE="$LOG_DIR/maintenance-status.json"
 LOCK_DIR="$LOG_DIR/operation.lock"
+SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
+CERTIFICATION_FILE="$LOG_DIR/certifications/latest.json"
 AUTO_CHEZMOI_UPDATE="${AUTO_CHEZMOI_UPDATE:-1}"
 BREW_MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-brew-maintenance.sh"
+CERTIFY_SCRIPT="$HOME/.local/bin/mac-dotfiles-certify.sh"
 WATCHDOG_SCRIPT="$HOME/.local/bin/mac-dotfiles-watchdog.sh"
 maintenance_work_done=0
+certification_failed=0
 
 mkdir -p "$LOG_DIR"
 
@@ -38,6 +42,47 @@ write_maintenance_status() {
     mv "$temp" "$STATUS_FILE"
 }
 
+current_source_commit() {
+    git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null
+}
+
+certification_matches_commit() {
+    local commit="$1"
+    [[ -f "$CERTIFICATION_FILE" ]] || return 1
+    jq -e --arg commit "$commit" \
+        '.schema_version == 1 and .kind == "mac-dotfiles-certification" and .overall == "pass" and .commit == $commit' \
+        "$CERTIFICATION_FILE" >/dev/null 2>&1
+}
+
+certify_updated_source() {
+    local previous_commit="$1" current_commit
+    if ! current_commit="$(current_source_commit)"; then
+        echo "⚠️  Current dotfiles commit is unavailable; skipping automatic certification"
+        return 0
+    fi
+    if [[ "$current_commit" == "$previous_commit" ]] && certification_matches_commit "$current_commit"; then
+        echo "🧪 Certification already matches the current commit"
+        return 0
+    fi
+    if [[ ! -x "$CERTIFY_SCRIPT" ]]; then
+        echo "❌ Missing certification script: $CERTIFY_SCRIPT"
+        return 1
+    fi
+    if [[ -n "$previous_commit" && "$current_commit" != "$previous_commit" ]]; then
+        echo "🧪 Dotfiles changed; certifying commit ${current_commit:0:7}..."
+    else
+        echo "🧪 Certifying current dotfiles commit ${current_commit:0:7}..."
+    fi
+    if ! "$CERTIFY_SCRIPT" --skip-live; then
+        echo "❌ Automatic certification failed for commit ${current_commit:0:7}"
+        return 1
+    fi
+    if ! certification_matches_commit "$current_commit"; then
+        echo "❌ Automatic certification did not produce a matching passing attestation"
+        return 1
+    fi
+}
+
 maintenance_exit() {
     local exit_status=$?
     cleanup_lock
@@ -59,11 +104,15 @@ echo "===== $(date '+%Y-%m-%d %H:%M:%S') :: mac-dotfiles maintenance ====="
 
 if [[ "$AUTO_CHEZMOI_UPDATE" == "1" ]]; then
     if command -v chezmoi >/dev/null 2>&1; then
+        source_commit_before="$(current_source_commit || true)"
         echo "🧩 Syncing dotfiles with chezmoi..."
         if ! chezmoi update --apply; then
             echo "⚠️  chezmoi update failed. Continuing with Homebrew maintenance."
         else
             maintenance_work_done=1
+            if ! certify_updated_source "$source_commit_before"; then
+                certification_failed=1
+            fi
         fi
     else
         echo "⚠️  chezmoi not installed, skipping dotfiles sync"
@@ -89,6 +138,11 @@ fi
 
 if [[ "$maintenance_work_done" -eq 0 ]]; then
     echo "❌ No maintenance task could run"
+    exit 1
+fi
+
+if [[ "$certification_failed" -eq 1 ]]; then
+    echo "❌ Maintenance completed with an automatic certification failure"
     exit 1
 fi
 
