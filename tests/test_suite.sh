@@ -21,7 +21,7 @@ validate_chezmoi_source_names() {
 validate_repo_files_are_ignored() {
     local path
 
-    for path in .github/ README.md doctor.sh install.sh lib/ migrations/ profiles/ skills/ tests/; do
+    for path in .github/ README.md compliance/ doctor.sh install.sh lib/ migrations/ profiles/ skills/ tests/; do
         if ! grep -Fqx "$path" "$REPO_ROOT/.chezmoiignore"; then
             echo "Repository-only path is missing from .chezmoiignore: $path" >&2
             return 1

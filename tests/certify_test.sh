@@ -19,6 +19,7 @@ trap 'rm -f "$output"; rm -rf "$state_dir"' EXIT
 )
 jq -e '.schema_version == 1 and .kind == "mac-dotfiles-certification" and .overall == "pass"' "$output" >/dev/null
 jq -e '[.checks[] | select(.status == "fail")] | length == 0' "$output" >/dev/null
+jq -e '.checks[] | select(.name == "compliance-catalog" and .status == "pass")' "$output" >/dev/null
 cmp -s "$output" "$state_dir/certifications/latest.json"
 
 echo "[PASS] certification tests completed"

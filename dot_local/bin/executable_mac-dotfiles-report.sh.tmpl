@@ -14,6 +14,7 @@ LATEST_CERTIFICATION="$STATE_DIR/certifications/latest.json"
 RECOVERY_DIR="$STATE_DIR/recovery-snapshots"
 WATCHDOG_STATE="$STATE_DIR/watchdog/state.json"
 CERTIFIED_UPDATE_STATE="$STATE_DIR/certified-update-state.json"
+COMPLIANCE_STATE="$STATE_DIR/compliance/latest.json"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-report.XXXXXX")"
 
 cleanup() {
@@ -251,6 +252,11 @@ if [[ -f "$CERTIFIED_UPDATE_STATE" ]]; then
     echo "- Certified update: $(jq -r '"\(.status) (candidate `\(.candidate_commit[0:7])`, last known good `\(.last_known_good[0:7])`)"' "$CERTIFIED_UPDATE_STATE" 2>/dev/null || echo invalid)"
 else
     echo "- Certified update: none"
+fi
+if [[ -f "$COMPLIANCE_STATE" ]]; then
+    echo "- NIST compliance: $(jq -r '"\(.overall) (\(.summary.pass) pass, \(.summary.fail) findings, \(.summary.error) errors; \(.timestamp))"' "$COMPLIANCE_STATE" 2>/dev/null || echo invalid)"
+else
+    echo "- NIST compliance: no audit recorded"
 fi
 latest_recovery="$(find "$RECOVERY_DIR" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tar.gz.enc' \) 2>/dev/null | sort | tail -n 1 || true)"
 if [[ -n "$latest_recovery" ]]; then

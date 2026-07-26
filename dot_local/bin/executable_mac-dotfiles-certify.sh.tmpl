@@ -6,6 +6,7 @@ SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
 STATE_DIR="${MAC_DOTFILES_STATE_DIR:-$HOME/.local/state/mac-dotfiles}"
 ENGINE="$SOURCE_DIR/dot_local/bin/executable_mac-dotfiles-converge.sh.tmpl"
 MIGRATOR="$SOURCE_DIR/dot_local/bin/executable_mac-dotfiles-migrate.sh.tmpl"
+COMPLIANCE_SCRIPT="$SOURCE_DIR/dot_local/bin/executable_mac-dotfiles-compliance.sh.tmpl"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-certify.XXXXXX")"
 CHECKS_FILE="$TMP_DIR/checks.jsonl"
 FORMAT="text"
@@ -126,6 +127,7 @@ else
 fi
 run_check "profiles" check_profiles
 run_check "migration-catalog" check_migration_catalog
+run_check "compliance-catalog" bash "$COMPLIANCE_SCRIPT" validate-catalog
 run_check "transaction-faults" bash "$SOURCE_DIR/tests/converge_test.sh"
 
 if [[ "$SKIP_LIVE" -eq 1 ]]; then

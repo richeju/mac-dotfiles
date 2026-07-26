@@ -15,10 +15,12 @@ RECOVERY_DIR="$STATE_DIR/recovery-snapshots"
 MAINTENANCE_LOG="$STATE_DIR/maintenance.log"
 MAINTENANCE_STATUS_FILE="$STATE_DIR/maintenance-status.json"
 CERTIFIED_UPDATE_STATE_FILE="$STATE_DIR/certified-update-state.json"
+COMPLIANCE_FILE="$STATE_DIR/compliance/latest.json"
 COOLDOWN_SECONDS="${MAC_DOTFILES_WATCHDOG_COOLDOWN_SECONDS:-21600}"
 CERTIFICATION_MAX_AGE="${MAC_DOTFILES_CERTIFICATION_MAX_AGE_SECONDS:-604800}"
 SNAPSHOT_MAX_AGE="${MAC_DOTFILES_SNAPSHOT_MAX_AGE_SECONDS:-2592000}"
 MAINTENANCE_MAX_AGE="${MAC_DOTFILES_MAINTENANCE_MAX_AGE_SECONDS:-172800}"
+COMPLIANCE_MAX_AGE="${MAC_DOTFILES_COMPLIANCE_MAX_AGE_SECONDS:-604800}"
 NOTIFY=1
 JSON_MODE=0
 WORK_DIR=""
@@ -141,6 +143,38 @@ check_certified_update() {
         record_check certified-update critical "current source differs from last known good"
     else
         record_check certified-update healthy "current source is the last known-good commit"
+    fi
+}
+
+check_compliance() {
+    local overall age fail_count error_count
+    if [[ ! -f "$COMPLIANCE_FILE" ]]; then
+        record_check compliance warning "no NIST compliance audit found"
+        return
+    fi
+    if ! jq -e \
+        '.schema_version == 1 and .kind == "mac-dotfiles-nist-compliance" and (.overall | type == "string") and (.results | type == "array")' \
+        "$COMPLIANCE_FILE" >/dev/null 2>&1; then
+        record_check compliance critical "NIST compliance evidence is invalid"
+        return
+    fi
+    overall="$(jq -r '.overall' "$COMPLIANCE_FILE")"
+    fail_count="$(jq -r '.summary.fail // 0' "$COMPLIANCE_FILE")"
+    error_count="$(jq -r '.summary.error // 0' "$COMPLIANCE_FILE")"
+    age="$(age_seconds "$COMPLIANCE_FILE")" || {
+        record_check compliance warning "NIST compliance audit age is unavailable"
+        return
+    }
+    if ((age > COMPLIANCE_MAX_AGE)); then
+        record_check compliance warning "NIST compliance audit is older than $((COMPLIANCE_MAX_AGE / 86400)) days"
+    elif [[ "$overall" == "error" || "$error_count" -gt 0 ]]; then
+        record_check compliance critical "NIST compliance audit contains $error_count evaluation error(s)"
+    elif [[ "$overall" == "noncompliant" || "$fail_count" -gt 0 ]]; then
+        record_check compliance warning "NIST audit found $fail_count advisory finding(s)"
+    elif [[ "$overall" == "pass" ]]; then
+        record_check compliance healthy "tailored NIST audit passed"
+    else
+        record_check compliance warning "NIST compliance baseline is $overall"
     fi
 }
 
@@ -281,6 +315,7 @@ run_watchdog() {
     check_desired_state
     check_certification
     check_certified_update
+    check_compliance
     check_recovery_snapshot
     check_maintenance
     status="$(overall_status)"

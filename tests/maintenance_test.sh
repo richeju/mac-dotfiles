@@ -26,8 +26,14 @@ SCRIPT
 #!/usr/bin/env bash
 echo "watchdog-called:${MAC_DOTFILES_MAINTENANCE_EXIT_STATUS:-missing}"
 SCRIPT
+    cat >"$env_dir/home/.local/bin/mac-dotfiles-compliance.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+echo "compliance-called:$*"
+[[ ! -f "$HOME/compliance-errors" ]] || exit 2
+[[ ! -f "$HOME/compliance-findings" ]] || exit 1
+SCRIPT
     chmod +x "$env_dir/home/.local/bin/mac-dotfiles-certified-update.sh" \
-        "$env_dir/home/.local/bin/mac-dotfiles-watchdog.sh"
+        "$env_dir/home/.local/bin/mac-dotfiles-watchdog.sh" "$env_dir/home/.local/bin/mac-dotfiles-compliance.sh"
     echo "$env_dir"
 }
 
@@ -50,9 +56,28 @@ SCRIPT
     [[ "$output" == *"brew-maintenance-called"* ]] || fail "maintenance should run Homebrew work"
     [[ "$output" == *"Maintenance completed"* ]] || fail "maintenance should report success after doing work"
     [[ "$output" == *"watchdog-called:0"* ]] || fail "successful maintenance should update watchdog health"
+    [[ "$output" == *"Tailored NIST compliance audit passed"* ]] || fail "maintenance should refresh compliance evidence"
     jq -e '.schema_version == 1 and .exit_status == 0' \
         "$env_dir/home/.local/state/mac-dotfiles/maintenance-status.json" >/dev/null ||
         fail "successful maintenance should persist its status"
+}
+
+test_compliance_findings_are_advisory() {
+    local env_dir output
+    env_dir="$(setup_env)"
+    touch "$env_dir/home/compliance-findings"
+    cat >"$env_dir/home/.local/bin/chezmoi" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 0
+SCRIPT
+    cat >"$env_dir/home/.local/bin/brew" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 0
+SCRIPT
+    chmod +x "$env_dir/home/.local/bin/chezmoi" "$env_dir/home/.local/bin/brew"
+    output="$(HOME="$env_dir/home" PATH="/usr/bin:/bin:/usr/sbin:/sbin" bash "$MAINTENANCE_SCRIPT")"
+    [[ "$output" == *"recorded advisory findings"* ]] || fail "NIST findings should be reported"
+    [[ "$output" == *"watchdog-called:0"* ]] || fail "audit-only findings must not fail maintenance"
 }
 
 test_failed_certified_update_fails_maintenance_after_other_work() {
@@ -98,5 +123,6 @@ test_no_available_work_fails() {
 
 test_launchd_path_finds_managed_tools
 test_failed_certified_update_fails_maintenance_after_other_work
+test_compliance_findings_are_advisory
 test_no_available_work_fails
 echo "[PASS] maintenance tests completed"

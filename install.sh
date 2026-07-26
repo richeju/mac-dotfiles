@@ -236,6 +236,12 @@ run_verify() {
         verify_warn "Certified update script is missing or not executable"
     fi
 
+    if [[ -x "$HOME/.local/bin/mac-dotfiles-compliance.sh" ]]; then
+        verify_ok "NIST compliance audit script is installed"
+    else
+        verify_warn "NIST compliance audit script is missing or not executable"
+    fi
+
     if [[ -f "$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist" ]]; then
         verify_ok "Maintenance LaunchAgent plist exists"
     else
@@ -361,6 +367,12 @@ print_install_summary() {
         summary_ok "Certified transactional updater installed"
     else
         summary_warn "Certified transactional updater is missing"
+    fi
+
+    if [[ -x "$HOME/.local/bin/mac-dotfiles-compliance.sh" ]]; then
+        summary_ok "Tailored NIST compliance auditor installed"
+    else
+        summary_warn "Tailored NIST compliance auditor is missing"
     fi
 
     if [[ "$MINIMAL_MODE" == "true" ]]; then
@@ -536,6 +548,7 @@ echo "Useful commands:"
 echo "  mac-dotfiles.sh   - Optional local launcher"
 echo "  mac-dotfiles.sh repair - Reconcile dotfiles, packages, and health checks"
 echo "  mac-dotfiles.sh update - Certify and transactionally apply updates"
+echo "  mac-dotfiles.sh compliance audit - Audit the tailored NIST baseline"
 echo "  chezmoi diff     - See what would change"
 echo "  chezmoi apply    - Apply changes"
 echo "  mac-dotfiles.sh raw-update - Pull and apply directly (advanced)"

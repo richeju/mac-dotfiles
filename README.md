@@ -61,7 +61,7 @@ This repository is designed for both:
 
 - A fresh macOS install: `install.sh` installs Homebrew and chezmoi, applies the dotfiles, renders `~/.Brewfile`, then installs the required packages with `brew bundle --global --verbose`.
 - Existing installs and repairs: rerunning `install.sh` reconciles managed files with `chezmoi update --apply --force --no-tty`, so missing managed helpers are restored without prompts.
-- Ongoing updates: the managed maintenance scripts run `chezmoi update --apply`, `brew update`, `brew upgrade --formula`, `brew upgrade --cask --greedy`, cleanup, and diagnostics.
+- Ongoing updates: the managed maintenance scripts fetch and certify a fast-forward candidate, converge transactionally, then run Homebrew upgrades, cleanup, diagnostics, and the tailored NIST audit.
 - Readiness checks: `install.sh --verify` audits Homebrew, chezmoi, `~/.Brewfile`, package status, GitHub CLI/auth, and maintenance files without changing the machine.
 
 Some macOS apps can still require manual approval or an administrator password during cask upgrades. For example, Dropbox may ask for Privacy & Security approval or sudo access for its system extension. In that case, the maintenance script reports a warning and continues so the rest of the machine stays up to date.
@@ -204,9 +204,31 @@ Applied on install and again whenever the managed baseline changes, with practic
 
 This is a lightweight baseline inspired by common NIST/CIS hardening themes for endpoint visibility, session lock enforcement, and safer handling of downloaded content.
 
+### Tailored NIST Compliance Audit
+
+The repository includes an audit-only `personal-nist-low` baseline for standalone Apple Silicon Macs. It is a deliberately small, low-friction tailoring of the NIST macOS Security Compliance Project (mSCP) macOS 26 guidance, pinned to an upstream commit for reproducibility:
+
+- NIST project: https://csrc.nist.gov/Projects/macos-security
+- mSCP documentation: https://pages.nist.gov/macos_security/
+- Upstream baseline: `800-53r5_low_macos_26.0`
+
+The first pass evaluates 16 controls covering platform integrity, critical updates, session locking, local accounts, remote-access services, time synchronization, FileVault, and the application firewall. Each result includes the upstream mSCP rule ID, macOS 26 CCE, NIST SP 800-53 Rev. 5 mappings, evidence, impact, remediation mode, and guidance.
+
+```bash
+mac-dotfiles.sh compliance audit
+mac-dotfiles.sh compliance audit --json
+mac-dotfiles.sh compliance plan
+mac-dotfiles.sh compliance status
+mac-dotfiles.sh compliance explain os_sip_enable
+```
+
+Evidence is stored under `~/.local/state/mac-dotfiles/compliance/`, included in the machine report, refreshed by scheduled maintenance, and monitored by the watchdog. Findings are advisory warnings and do not fail maintenance or certified updates; evaluator errors are reported as critical watchdog health issues.
+
+This feature does **not** claim that the Mac or repository is NIST-certified. NIST itself describes the upstream material as a catalog that must be tailored to the operational environment. This baseline never enables FileVault, changes recovery keys, enables the firewall, disables remote services, or applies enterprise password/MDM policies automatically.
+
 ### Automated Maintenance
 Daily automatic tasks (via macOS LaunchAgent):
-- Dotfiles sync (`chezmoi update --apply`)
+- Certified transactional dotfiles update
 - Homebrew update
 - Package upgrades
 - Application (cask) upgrades
@@ -214,6 +236,7 @@ Daily automatic tasks (via macOS LaunchAgent):
 - System diagnostics
 - Cache statistics
 - Proactive health evaluation and transition-based native notifications
+- Tailored NIST compliance evidence refresh
 - Scheduled every day at 04:00
 
 You can disable the automatic dotfiles sync by setting `AUTO_CHEZMOI_UPDATE=0` before running the maintenance script manually.
@@ -268,6 +291,7 @@ The launcher provides a compact numbered menu for common actions:
 - create, inspect, verify, and transactionally restore disaster-recovery snapshots
 - inspect or run the proactive health watchdog
 - fetch, certify, and transactionally apply a candidate update
+- audit and explain the tailored NIST baseline
 
 You can also call commands directly:
 ```bash
@@ -275,6 +299,8 @@ mac-dotfiles.sh verify
 mac-dotfiles.sh repair
 mac-dotfiles.sh safe-update
 mac-dotfiles.sh certified-update run
+mac-dotfiles.sh compliance audit
+mac-dotfiles.sh compliance plan
 mac-dotfiles.sh rollback latest --dry-run
 mac-dotfiles.sh history
 mac-dotfiles.sh report
@@ -424,12 +450,14 @@ brew bundle --global --verbose
 - `doctor.sh` - Health check script for dependencies and dotfile status
 - `lib/doctor_output.sh` - JSON, Markdown, and explanation renderers used by the health check
 - `tests/test_suite.sh` - Syntax validation and entry point for the complete shell test suite
+- `compliance/personal-nist-low.json` - Versioned, audit-only NIST/mSCP tailoring for a personal Mac
 - `migrations/*.sh` - Ordered, idempotent repository schema migrations
 - `dot_local/bin/executable_mac-dotfiles.sh.tmpl` - Compact launcher/menu for common workflows
 - `dot_local/bin/executable_mac-dotfiles-converge.sh.tmpl` - Profile, plan, drift, transaction, validation, and rollback engine
 - `dot_local/bin/executable_mac-dotfiles-migrate.sh.tmpl` - Versioned schema migration planner and runner
 - `dot_local/bin/executable_mac-dotfiles-certify.sh.tmpl` - Versioned repository and live-machine certification attestation
 - `dot_local/bin/executable_mac-dotfiles-certified-update.sh.tmpl` - Pre-apply candidate certification, transactional convergence, and last-known-good source rollback
+- `dot_local/bin/executable_mac-dotfiles-compliance.sh.tmpl` - Audit-only tailored NIST rule evaluation and evidence
 - `dot_local/bin/executable_mac-dotfiles-recovery.sh.tmpl` - Portable, optionally encrypted disaster-recovery snapshots and transactional restore
 - `dot_local/bin/executable_mac-dotfiles-watchdog.sh.tmpl` - Proactive health state, cooldown, and native macOS notifications
 - `run_onchange_configure-dock-darwin.sh.tmpl` - Dock configuration reapplied when its desired values change

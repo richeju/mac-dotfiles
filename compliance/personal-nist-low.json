@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "kind": "mac-dotfiles-compliance-baseline",
+  "id": "personal-nist-low",
+  "title": "Personal Mac — NIST SP 800-53 Rev. 5 Low (tailored, audit-only)",
+  "mode": "audit-only",
+  "target": {
+    "os": "macOS",
+    "version": "26"
+  },
+  "upstream": {
+    "project": "NIST macOS Security Compliance Project (mSCP)",
+    "baseline": "800-53r5_low_macos_26.0",
+    "commit": "11b5896e4f12f43410686024f543792742562c91",
+    "url": "https://github.com/usnistgov/macos_security/blob/11b5896e4f12f43410686024f543792742562c91/src/mscp/data/baselines/macos/800-53r5_low_macos_26.0.yaml"
+  },
+  "tailoring": {
+    "owner": "mac-dotfiles",
+    "rationale": "Low-friction controls that can be assessed reliably on a standalone personal Apple Silicon Mac without MDM.",
+    "parameters": {
+      "screensaver_timeout_seconds": 900
+    },
+    "excluded_families": [
+      "smart-card enforcement",
+      "enterprise password policy",
+      "iCloud service prohibition",
+      "mandatory MDM enrollment",
+      "auditd policy remediation"
+    ]
+  },
+  "rules": [
+    {
+      "id": "system_settings_firewall_enable",
+      "title": "Enable macOS Application Firewall",
+      "category": "network",
+      "cce": "CCE-95369-5",
+      "controls": ["AC-4", "CM-7", "CM-7(1)", "SC-7", "SC-7(12)"],
+      "remediation": "manual",
+      "impact": "medium",
+      "guidance": "Enable Firewall in System Settings > Network > Firewall after reviewing inbound application access."
+    },
+    {
+      "id": "system_settings_firewall_stealth_mode_enable",
+      "title": "Enable Firewall Stealth Mode",
+      "category": "network",
+      "cce": "CCE-95370-3",
+      "controls": ["CM-7", "CM-7(1)", "SC-7", "SC-7(16)"],
+      "remediation": "manual",
+      "impact": "low",
+      "guidance": "Enable stealth mode in Firewall Options after enabling the application firewall."
+    },
+    {
+      "id": "os_gatekeeper_enable",
+      "title": "Enable Gatekeeper",
+      "category": "platform-integrity",
+      "cce": "CCE-95195-4",
+      "controls": ["CM-5", "CM-14", "SI-3", "SI-7(1)", "SI-7(15)"],
+      "remediation": "manual",
+      "impact": "low",
+      "guidance": "Keep application assessments enabled and approve exceptional software individually."
+    },
+    {
+      "id": "os_sip_enable",
+      "title": "Enable System Integrity Protection",
+      "category": "platform-integrity",
+      "cce": "CCE-95298-6",
+      "controls": ["AC-3", "AU-9", "AU-9(3)", "CM-5", "CM-5(6)", "SC-4", "SI-2", "SI-7"],
+      "remediation": "manual-recovery",
+      "impact": "high",
+      "guidance": "SIP changes require Recovery; investigate why it is disabled before changing it."
+    },
+    {
+      "id": "system_settings_critical_update_install_enforce",
+      "title": "Install critical security updates automatically",
+      "category": "updates",
+      "cce": "CCE-95363-8",
+      "controls": ["SI-2"],
+      "remediation": "manual",
+      "impact": "low",
+      "guidance": "Enable automatic security responses and system data files in Software Update settings."
+    },
+    {
+      "id": "system_settings_softwareupdate_current",
+      "title": "Keep macOS software updates current",
+      "category": "updates",
+      "cce": "CCE-95405-7",
+      "controls": ["SI-2"],
+      "remediation": "manual",
+      "impact": "medium",
+      "guidance": "Review and install recommended macOS updates from System Settings."
+    },
+    {
+      "id": "system_settings_screensaver_timeout_enforce",
+      "title": "Lock an inactive session within 15 minutes",
+      "category": "session",
+      "cce": "CCE-95397-6",
+      "controls": ["AC-11", "IA-11"],
+      "remediation": "manual",
+      "impact": "medium",
+      "guidance": "Set the display/screen saver inactivity timeout to 900 seconds or less."
+    },
+    {
+      "id": "system_settings_screensaver_password_enforce",
+      "title": "Require authentication after screen saver",
+      "category": "session",
+      "cce": "CCE-95396-8",
+      "controls": ["AC-11"],
+      "remediation": "managed",
+      "impact": "low",
+      "guidance": "This repository manages askForPassword=1 in its hardening baseline."
+    },
+    {
+      "id": "system_settings_screensaver_ask_for_password_delay_enforce",
+      "title": "Require authentication immediately after lock",
+      "category": "session",
+      "cce": "CCE-95395-0",
+      "controls": ["AC-11"],
+      "remediation": "managed",
+      "impact": "low",
+      "guidance": "This repository manages askForPasswordDelay=0 in its hardening baseline."
+    },
+    {
+      "id": "system_settings_automatic_login_disable",
+      "title": "Disable automatic login",
+      "category": "accounts",
+      "cce": "CCE-95356-2",
+      "controls": ["IA-2", "IA-5(13)"],
+      "remediation": "manual",
+      "impact": "medium",
+      "guidance": "Disable automatic login in Login Options."
+    },
+    {
+      "id": "system_settings_guest_account_disable",
+      "title": "Disable the guest account",
+      "category": "accounts",
+      "cce": "CCE-95374-5",
+      "controls": ["AC-2", "AC-2(9)"],
+      "remediation": "manual",
+      "impact": "medium",
+      "guidance": "Disable Guest User unless anonymous local access is explicitly required."
+    },
+    {
+      "id": "system_settings_screen_sharing_disable",
+      "title": "Disable Screen Sharing when unused",
+      "category": "remote-access",
+      "cce": "CCE-95394-3",
+      "controls": ["AC-3", "AC-17"],
+      "remediation": "manual",
+      "impact": "high",
+      "guidance": "Disable Screen Sharing unless it is intentionally used and access is controlled."
+    },
+    {
+      "id": "system_settings_remote_management_disable",
+      "title": "Disable Remote Management when unused",
+      "category": "remote-access",
+      "cce": "CCE-95393-5",
+      "controls": ["CM-7", "CM-7(1)"],
+      "remediation": "manual",
+      "impact": "high",
+      "guidance": "Disable Apple Remote Desktop management unless it is explicitly required."
+    },
+    {
+      "id": "system_settings_ssh_disable",
+      "title": "Disable Remote Login when unused",
+      "category": "remote-access",
+      "cce": "CCE-95406-5",
+      "controls": ["AC-17", "CM-7", "CM-7(1)"],
+      "remediation": "manual",
+      "impact": "high",
+      "guidance": "Disable Remote Login unless SSH access is intentionally required and hardened."
+    },
+    {
+      "id": "os_time_server_enabled",
+      "title": "Enable the time synchronization daemon",
+      "category": "platform-integrity",
+      "cce": "CCE-95325-7",
+      "controls": ["AU-12(1)", "SC-45(1)"],
+      "remediation": "manual",
+      "impact": "low",
+      "guidance": "Keep the macOS timed service enabled for reliable timestamps."
+    },
+    {
+      "id": "system_settings_filevault_enforce",
+      "title": "Enable FileVault",
+      "category": "data-protection",
+      "cce": "CCE-95367-9",
+      "controls": ["SC-28", "SC-28(1)"],
+      "remediation": "manual-recovery-key",
+      "impact": "high",
+      "guidance": "Enable FileVault manually only after choosing and verifying a recovery-key strategy."
+    }
+  ]
+}

@@ -1,0 +1,475 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+export PATH="${MAC_DOTFILES_PATH:-$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin}"
+
+SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
+STATE_DIR="${MAC_DOTFILES_STATE_DIR:-$HOME/.local/state/mac-dotfiles}"
+BASELINE="${MAC_DOTFILES_COMPLIANCE_BASELINE:-$SOURCE_DIR/compliance/personal-nist-low.json}"
+COMPLIANCE_DIR="$STATE_DIR/compliance"
+LATEST_FILE="$COMPLIANCE_DIR/latest.json"
+FIREWALL_CMD="${MAC_DOTFILES_FIREWALL_CMD:-/usr/libexec/ApplicationFirewall/socketfilterfw}"
+RESULTS_FILE=""
+WORK_DIR=""
+CHECK_DETAIL=""
+JSON_MODE=0
+
+usage() {
+    cat <<'USAGE'
+Usage: mac-dotfiles-compliance.sh COMMAND [options]
+
+Commands:
+  audit [--json]          Evaluate the tailored NIST baseline and save evidence.
+  plan [--json]           Audit and show non-compliant or unavailable controls.
+  status [--json]         Show the latest saved compliance state.
+  explain RULE_ID         Explain one rule, its mappings, and remediation mode.
+  validate-catalog        Validate baseline structure and uniqueness.
+
+This first compliance pass is audit-only. It never changes security settings.
+USAGE
+}
+
+die() {
+    echo "✗ $1" >&2
+    exit "${2:-1}"
+}
+
+cleanup() { [[ -z "$WORK_DIR" ]] || rm -rf "$WORK_DIR"; }
+trap cleanup EXIT
+
+require_jq() {
+    command -v jq >/dev/null 2>&1 || die "jq is required"
+}
+
+is_macos() {
+    [[ "${MAC_DOTFILES_PLATFORM:-$(uname -s)}" == "Darwin" ]]
+}
+
+is_target_platform() {
+    local version target
+    is_macos || return 1
+    version="${MAC_DOTFILES_OS_VERSION:-$(sw_vers -productVersion 2>/dev/null || true)}"
+    target="$(jq -r '.target.version' "$BASELINE")"
+    [[ "${version%%.*}" == "$target" ]]
+}
+
+validate_catalog() {
+    require_jq
+    [[ -f "$BASELINE" ]] || die "Compliance baseline is missing: $BASELINE"
+    jq -e '
+      .schema_version == 1 and
+      .kind == "mac-dotfiles-compliance-baseline" and
+      .id == "personal-nist-low" and
+      .mode == "audit-only" and
+      .target.os == "macOS" and
+      (.upstream.commit | test("^[0-9a-f]{40}$")) and
+      (.rules | length >= 10) and
+      ([.rules[].id] | length == (unique | length)) and
+      all(.rules[];
+        (.id | type == "string" and length > 0) and
+        (.title | type == "string" and length > 0) and
+        (.cce | test("^CCE-[0-9]+-[0-9]+$")) and
+        (.controls | type == "array" and length > 0) and
+        (.remediation | type == "string" and length > 0) and
+        (.guidance | type == "string" and length > 0)
+      )' "$BASELINE" >/dev/null
+    echo "✓ Compliance catalog is valid ($(jq '.rules | length' "$BASELINE") unique rules)"
+}
+
+command_available() { command -v "$1" >/dev/null 2>&1; }
+
+check_filevault() {
+    local output
+    command_available fdesetup || {
+        CHECK_DETAIL="fdesetup is unavailable"
+        return 3
+    }
+    output="$(fdesetup status 2>&1)" || {
+        CHECK_DETAIL="unable to read FileVault status"
+        return 3
+    }
+    if grep -Fq "FileVault is On" <<<"$output"; then
+        CHECK_DETAIL="FileVault is enabled"
+        return 0
+    fi
+    CHECK_DETAIL="FileVault is disabled; recovery-key planning is required before remediation"
+    return 1
+}
+
+check_firewall() {
+    local output
+    [[ -x "$FIREWALL_CMD" ]] || {
+        CHECK_DETAIL="application firewall tool is unavailable"
+        return 3
+    }
+    output="$($FIREWALL_CMD --getglobalstate 2>&1)" || {
+        CHECK_DETAIL="unable to read application firewall state"
+        return 3
+    }
+    if grep -Eqi 'enabled|State = [12]' <<<"$output"; then
+        CHECK_DETAIL="macOS application firewall is enabled"
+        return 0
+    fi
+    CHECK_DETAIL="macOS application firewall is disabled"
+    return 1
+}
+
+check_firewall_stealth() {
+    local output
+    [[ -x "$FIREWALL_CMD" ]] || {
+        CHECK_DETAIL="application firewall tool is unavailable"
+        return 3
+    }
+    output="$($FIREWALL_CMD --getstealthmode 2>&1)" || {
+        CHECK_DETAIL="unable to read firewall stealth mode"
+        return 3
+    }
+    if grep -Eqi 'enabled|stealth mode is on' <<<"$output"; then
+        CHECK_DETAIL="firewall stealth mode is enabled"
+        return 0
+    fi
+    CHECK_DETAIL="firewall stealth mode is disabled"
+    return 1
+}
+
+check_gatekeeper() {
+    local output
+    command_available spctl || {
+        CHECK_DETAIL="spctl is unavailable"
+        return 3
+    }
+    output="$(spctl --status 2>&1)" || true
+    if grep -Fqi "assessments enabled" <<<"$output"; then
+        CHECK_DETAIL="Gatekeeper assessments are enabled"
+        return 0
+    fi
+    CHECK_DETAIL="Gatekeeper assessments are disabled or unavailable"
+    return 1
+}
+
+check_sip() {
+    local output
+    command_available csrutil || {
+        CHECK_DETAIL="csrutil is unavailable"
+        return 3
+    }
+    output="$(csrutil status 2>&1)" || {
+        CHECK_DETAIL="unable to read SIP state"
+        return 3
+    }
+    if grep -Fqi "status: enabled" <<<"$output"; then
+        CHECK_DETAIL="System Integrity Protection is enabled"
+        return 0
+    fi
+    CHECK_DETAIL="System Integrity Protection is not enabled"
+    return 1
+}
+
+check_critical_updates() {
+    local value
+    command_available defaults || {
+        CHECK_DETAIL="defaults is unavailable"
+        return 3
+    }
+    value="$(defaults read /Library/Preferences/com.apple.SoftwareUpdate CriticalUpdateInstall 2>/dev/null || true)"
+    if [[ "$value" == "1" ]]; then
+        CHECK_DETAIL="automatic critical security updates are enabled"
+        return 0
+    fi
+    CHECK_DETAIL="automatic critical security updates are not explicitly enabled"
+    return 1
+}
+
+check_software_current() {
+    local output status=0
+    command_available softwareupdate || {
+        CHECK_DETAIL="softwareupdate is unavailable"
+        return 3
+    }
+    output="$(softwareupdate -l 2>&1)" || status=$?
+    if [[ "$status" -ne 0 ]]; then
+        CHECK_DETAIL="software update inspection failed"
+        return 3
+    fi
+    if grep -Eqi 'No new software available|No updates are available' <<<"$output"; then
+        CHECK_DETAIL="no recommended macOS updates are pending"
+        return 0
+    fi
+    CHECK_DETAIL="recommended macOS updates are pending"
+    return 1
+}
+
+read_default() {
+    defaults "$@" 2>/dev/null
+}
+
+check_screensaver_timeout() {
+    local value
+    command_available defaults || {
+        CHECK_DETAIL="defaults is unavailable"
+        return 3
+    }
+    value="$(read_default -currentHost read com.apple.screensaver idleTime || true)"
+    if [[ "$value" =~ ^[0-9]+$ ]] && [[ "$value" -gt 0 && "$value" -le 900 ]]; then
+        CHECK_DETAIL="inactivity timeout is ${value}s (maximum 900s)"
+        return 0
+    fi
+    CHECK_DETAIL="inactivity timeout is unset, disabled, or greater than 900s"
+    return 1
+}
+
+check_screensaver_password() {
+    local value
+    command_available defaults || {
+        CHECK_DETAIL="defaults is unavailable"
+        return 3
+    }
+    value="$(read_default read com.apple.screensaver askForPassword || true)"
+    if [[ "$value" == "1" ]]; then
+        CHECK_DETAIL="authentication is required after screen saver"
+        return 0
+    fi
+    CHECK_DETAIL="authentication after screen saver is not enforced"
+    return 1
+}
+
+check_screensaver_delay() {
+    local value
+    command_available defaults || {
+        CHECK_DETAIL="defaults is unavailable"
+        return 3
+    }
+    value="$(read_default read com.apple.screensaver askForPasswordDelay || true)"
+    if [[ "$value" == "0" ]]; then
+        CHECK_DETAIL="authentication is required immediately after lock"
+        return 0
+    fi
+    CHECK_DETAIL="screen-lock authentication delay is not zero"
+    return 1
+}
+
+check_automatic_login() {
+    local value
+    command_available defaults || {
+        CHECK_DETAIL="defaults is unavailable"
+        return 3
+    }
+    value="$(read_default read /Library/Preferences/com.apple.loginwindow autoLoginUser || true)"
+    if [[ -z "$value" ]]; then
+        CHECK_DETAIL="automatic login is disabled"
+        return 0
+    fi
+    CHECK_DETAIL="automatic login is configured for a user"
+    return 1
+}
+
+check_guest_account() {
+    local value
+    command_available defaults || {
+        CHECK_DETAIL="defaults is unavailable"
+        return 3
+    }
+    value="$(read_default read /Library/Preferences/com.apple.loginwindow GuestEnabled || true)"
+    if [[ -z "$value" || "$value" == "0" ]]; then
+        CHECK_DETAIL="guest account is disabled"
+        return 0
+    fi
+    CHECK_DETAIL="guest account is enabled"
+    return 1
+}
+
+check_service_absent() {
+    local service="$1" label="$2"
+    command_available launchctl || {
+        CHECK_DETAIL="launchctl is unavailable"
+        return 3
+    }
+    if launchctl print "system/$service" >/dev/null 2>&1; then
+        CHECK_DETAIL="$label service is running"
+        return 1
+    fi
+    CHECK_DETAIL="$label service is not running"
+    return 0
+}
+
+check_remote_management() {
+    if command_available pgrep && pgrep -x ARDAgent >/dev/null 2>&1; then
+        CHECK_DETAIL="Apple Remote Desktop agent is running"
+        return 1
+    fi
+    CHECK_DETAIL="Apple Remote Desktop agent is not running"
+    return 0
+}
+
+check_time_service() {
+    command_available launchctl || {
+        CHECK_DETAIL="launchctl is unavailable"
+        return 3
+    }
+    if launchctl print system/com.apple.timed >/dev/null 2>&1; then
+        CHECK_DETAIL="time synchronization daemon is running"
+        return 0
+    fi
+    CHECK_DETAIL="time synchronization daemon is unavailable"
+    return 1
+}
+
+evaluate_rule() {
+    local id="$1"
+    CHECK_DETAIL=""
+    case "$id" in
+        system_settings_firewall_enable) check_firewall ;;
+        system_settings_firewall_stealth_mode_enable) check_firewall_stealth ;;
+        os_gatekeeper_enable) check_gatekeeper ;;
+        os_sip_enable) check_sip ;;
+        system_settings_critical_update_install_enforce) check_critical_updates ;;
+        system_settings_softwareupdate_current) check_software_current ;;
+        system_settings_screensaver_timeout_enforce) check_screensaver_timeout ;;
+        system_settings_screensaver_password_enforce) check_screensaver_password ;;
+        system_settings_screensaver_ask_for_password_delay_enforce) check_screensaver_delay ;;
+        system_settings_automatic_login_disable) check_automatic_login ;;
+        system_settings_guest_account_disable) check_guest_account ;;
+        system_settings_screen_sharing_disable) check_service_absent com.apple.screensharing "Screen Sharing" ;;
+        system_settings_remote_management_disable) check_remote_management ;;
+        system_settings_ssh_disable) check_service_absent com.openssh.sshd "Remote Login" ;;
+        os_time_server_enabled) check_time_service ;;
+        system_settings_filevault_enforce) check_filevault ;;
+        *)
+            CHECK_DETAIL="rule has no local evaluator"
+            return 3
+            ;;
+    esac
+}
+
+record_result() {
+    local id="$1" status="$2" detail="$3" rule
+    rule="$(jq -c --arg id "$id" '.rules[] | select(.id == $id)' "$BASELINE")"
+    jq -nc --argjson rule "$rule" --arg status "$status" --arg detail "$detail" \
+        '$rule + {status:$status,detail:$detail}' >>"$RESULTS_FILE"
+}
+
+audit_rules() {
+    local id result status
+    while IFS= read -r id; do
+        if ! is_target_platform; then
+            record_result "$id" "not_applicable" "baseline targets macOS 26"
+            continue
+        fi
+        if evaluate_rule "$id"; then
+            status="pass"
+        else
+            result=$?
+            case "$result" in
+                1) status="fail" ;;
+                2) status="manual" ;;
+                *) status="error" ;;
+            esac
+        fi
+        record_result "$id" "$status" "$CHECK_DETAIL"
+    done < <(jq -r '.rules[].id' "$BASELINE")
+}
+
+render_text() {
+    jq -r '"NIST compliance audit: \(.overall)\nBaseline: \(.baseline.id)\nPlatform: \(.platform)\nUpdated: \(.timestamp)\n\nSummary: \(.summary.pass) pass, \(.summary.fail) fail, \(.summary.error) error, \(.summary.not_applicable) not applicable\n", (.results[] | "  \(.status | ascii_upcase)\t\(.id) — \(.detail)")' "$1"
+}
+
+run_audit() {
+    local timestamp platform overall pass fail error not_applicable temp latest_temp exit_status=0
+    case "${1:-}" in
+        "") ;;
+        --json) JSON_MODE=1 ;;
+        *) die "Unknown audit option: $1" 2 ;;
+    esac
+    validate_catalog >/dev/null
+    mkdir -p "$COMPLIANCE_DIR/attestations"
+    chmod 700 "$COMPLIANCE_DIR" "$COMPLIANCE_DIR/attestations"
+    WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-compliance.XXXXXX")"
+    RESULTS_FILE="$WORK_DIR/results.jsonl"
+    : >"$RESULTS_FILE"
+    audit_rules
+
+    pass="$(jq -s '[.[] | select(.status == "pass")] | length' "$RESULTS_FILE")"
+    fail="$(jq -s '[.[] | select(.status == "fail")] | length' "$RESULTS_FILE")"
+    error="$(jq -s '[.[] | select(.status == "error")] | length' "$RESULTS_FILE")"
+    not_applicable="$(jq -s '[.[] | select(.status == "not_applicable")] | length' "$RESULTS_FILE")"
+    if [[ "$error" -gt 0 ]]; then
+        overall="error"
+        exit_status=2
+    elif [[ "$fail" -gt 0 ]]; then
+        overall="noncompliant"
+        exit_status=1
+    elif [[ "$pass" -eq 0 ]]; then
+        overall="not_applicable"
+    else
+        overall="pass"
+    fi
+    timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    platform="$(sw_vers -productVersion 2>/dev/null || uname -s)"
+    temp="$WORK_DIR/attestation.json"
+    jq -s \
+        --arg timestamp "$timestamp" --arg platform "$platform" --arg overall "$overall" \
+        --argjson pass "$pass" --argjson fail "$fail" --argjson error "$error" --argjson not_applicable "$not_applicable" \
+        --slurpfile baseline "$BASELINE" \
+        '{schema_version:1,kind:"mac-dotfiles-nist-compliance",timestamp:$timestamp,platform:$platform,overall:$overall,baseline:{id:$baseline[0].id,title:$baseline[0].title,mode:$baseline[0].mode,upstream:$baseline[0].upstream},summary:{pass:$pass,fail:$fail,error:$error,not_applicable:$not_applicable},results:.}' \
+        "$RESULTS_FILE" >"$temp"
+    cp "$temp" "$COMPLIANCE_DIR/attestations/${timestamp//[:]/-}.json"
+    latest_temp="$LATEST_FILE.tmp.$$"
+    cp "$temp" "$latest_temp"
+    chmod 600 "$COMPLIANCE_DIR/attestations/${timestamp//[:]/-}.json" "$latest_temp"
+    mv "$latest_temp" "$LATEST_FILE"
+    if [[ "$JSON_MODE" -eq 1 ]]; then cat "$LATEST_FILE"; else render_text "$LATEST_FILE"; fi
+    return "$exit_status"
+}
+
+show_status() {
+    case "${1:-}" in
+        "") JSON_MODE=0 ;;
+        --json) JSON_MODE=1 ;;
+        *) die "Unknown status option: $1" 2 ;;
+    esac
+    [[ -f "$LATEST_FILE" ]] || die "No compliance state found; run: mac-dotfiles.sh compliance audit"
+    if [[ "$JSON_MODE" -eq 1 ]]; then cat "$LATEST_FILE"; else render_text "$LATEST_FILE"; fi
+}
+
+show_plan() {
+    local audit_status=0
+    case "${1:-}" in
+        "") JSON_MODE=0 ;;
+        --json) JSON_MODE=1 ;;
+        *) die "Unknown plan option: $1" 2 ;;
+    esac
+    run_audit --json >/dev/null || audit_status=$?
+    if [[ "$JSON_MODE" -eq 1 ]]; then
+        jq '{schema_version,kind,overall,baseline,summary,actions:[.results[] | select(.status != "pass" and .status != "not_applicable") | {id,title,status,remediation,impact,guidance,controls,detail}]}' "$LATEST_FILE"
+    else
+        echo "NIST compliance plan"
+        echo "===================="
+        jq -r '.results[] | select(.status != "pass" and .status != "not_applicable") | "  [\(.status | ascii_upcase)][\(.impact)] \(.id)\n    \(.guidance)"' "$LATEST_FILE"
+    fi
+    return "$audit_status"
+}
+
+explain_rule() {
+    local id="${1:-}" rule
+    [[ -n "$id" ]] || die "Usage: compliance explain RULE_ID" 2
+    validate_catalog >/dev/null
+    rule="$(jq -c --arg id "$id" '.rules[] | select(.id == $id)' "$BASELINE")"
+    [[ -n "$rule" ]] || die "Unknown compliance rule: $id" 2
+    jq -r '"\(.title)\n\(.id) / \(.cce)\nNIST SP 800-53 Rev. 5: \(.controls | join(", "))\nCategory: \(.category)\nImpact: \(.impact)\nRemediation: \(.remediation)\n\n\(.guidance)"' <<<"$rule"
+}
+
+command="${1:-status}"
+shift || true
+case "$command" in
+    audit) run_audit "$@" ;;
+    plan) show_plan "$@" ;;
+    status) show_status "$@" ;;
+    explain) explain_rule "$@" ;;
+    validate-catalog)
+        [[ $# -eq 0 ]] || die "validate-catalog takes no arguments" 2
+        validate_catalog
+        ;;
+    help | -h | --help) usage ;;
+    *) die "Unknown compliance command: $command" 2 ;;
+esac
