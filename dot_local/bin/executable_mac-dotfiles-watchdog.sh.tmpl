@@ -14,6 +14,7 @@ CERTIFICATION_FILE="$STATE_DIR/certifications/latest.json"
 RECOVERY_DIR="$STATE_DIR/recovery-snapshots"
 MAINTENANCE_LOG="$STATE_DIR/maintenance.log"
 MAINTENANCE_STATUS_FILE="$STATE_DIR/maintenance-status.json"
+CERTIFIED_UPDATE_STATE_FILE="$STATE_DIR/certified-update-state.json"
 COOLDOWN_SECONDS="${MAC_DOTFILES_WATCHDOG_COOLDOWN_SECONDS:-21600}"
 CERTIFICATION_MAX_AGE="${MAC_DOTFILES_CERTIFICATION_MAX_AGE_SECONDS:-604800}"
 SNAPSHOT_MAX_AGE="${MAC_DOTFILES_SNAPSHOT_MAX_AGE_SECONDS:-2592000}"
@@ -113,6 +114,33 @@ check_certification() {
         record_check certification warning "certification is older than $((CERTIFICATION_MAX_AGE / 86400)) days"
     else
         record_check certification healthy "latest certification passed"
+    fi
+}
+
+check_certified_update() {
+    local status last_good current_commit
+    if [[ ! -f "$CERTIFIED_UPDATE_STATE_FILE" ]]; then
+        record_check certified-update warning "no certified update has completed"
+        return
+    fi
+    if ! jq -e \
+        '.schema_version == 1 and .kind == "mac-dotfiles-certified-update" and (.status | type == "string") and (.last_known_good | type == "string")' \
+        "$CERTIFIED_UPDATE_STATE_FILE" >/dev/null 2>&1; then
+        record_check certified-update critical "certified-update state is invalid"
+        return
+    fi
+    status="$(jq -r '.status' "$CERTIFIED_UPDATE_STATE_FILE")"
+    last_good="$(jq -r '.last_known_good' "$CERTIFIED_UPDATE_STATE_FILE")"
+    if [[ "$status" != "success" ]]; then
+        record_check certified-update critical "latest certified update is $status"
+        return
+    fi
+    if ! current_commit="$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null)"; then
+        record_check certified-update warning "current repository commit is unavailable"
+    elif [[ -z "$last_good" || "$last_good" != "$current_commit" ]]; then
+        record_check certified-update critical "current source differs from last known good"
+    else
+        record_check certified-update healthy "current source is the last known-good commit"
     fi
 }
 
@@ -252,6 +280,7 @@ run_watchdog() {
     : >"$CHECKS_FILE"
     check_desired_state
     check_certification
+    check_certified_update
     check_recovery_snapshot
     check_maintenance
     status="$(overall_status)"

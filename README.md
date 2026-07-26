@@ -132,9 +132,21 @@ Repository evolution is handled by sequential, idempotent scripts under `migrati
 
 For a stronger release or machine check, `mac-dotfiles.sh certify` runs the full test suite, formatting and static analysis, profile rendering, migration-catalog validation, transaction fault injection, and live idempotence validation. It writes a versioned JSON attestation to `~/.local/state/mac-dotfiles/certifications/`; use `--skip-live` for CI or a repository-only check.
 
-Scheduled maintenance automatically runs repository-only certification after `chezmoi update` whenever the current commit does not already have a matching passing attestation. Unchanged certified commits skip this work. Certification failures are persisted as failed maintenance outcomes while Homebrew maintenance is still allowed to finish.
+Scheduled maintenance uses a certified safe-update gate instead of applying remote changes immediately. It fetches only fast-forward candidates, certifies an uncertified candidate before touching managed files, and then runs transactional convergence. A failed certification is rejected before application. A convergence failure rolls managed files and the source repository back to the previous last-known-good commit. The prior passing attestation is restored, evidence is persisted under `~/.local/state/mac-dotfiles/certified-updates/`, and Homebrew maintenance is still allowed to finish.
 
-The proactive watchdog runs after scheduled maintenance and records a versioned health state under `~/.local/state/mac-dotfiles/watchdog/state.json`. It monitors desired-state drift, certification age/result/commit, recovery snapshot age, and the persisted maintenance outcome and freshness under `~/.local/state/mac-dotfiles/maintenance-status.json`. Native macOS notifications are emitted only when severity changes, when an unresolved alert exceeds its six-hour cooldown, or when the machine returns to healthy.
+Run or inspect the same workflow manually:
+
+```bash
+mac-dotfiles.sh certified-update run
+mac-dotfiles.sh certified-update status
+mac-dotfiles.sh certified-update status --json
+```
+
+`mac-dotfiles.sh update`, the interactive update menu, scheduled maintenance, and `mac-dotfiles.sh repair` all use this gate. `mac-dotfiles.sh raw-update` remains available as an explicit advanced escape hatch when direct `chezmoi update --apply` behavior is required.
+
+Automatic updates refuse a dirty source repository so local work is never overwritten. The latest machine-readable state is stored at `~/.local/state/mac-dotfiles/certified-update-state.json` with the previous commit, candidate commit, and last-known-good commit.
+
+The proactive watchdog runs after scheduled maintenance and records a versioned health state under `~/.local/state/mac-dotfiles/watchdog/state.json`. It monitors desired-state drift, certification age/result/commit, certified-update/last-known-good state, recovery snapshot age, and the persisted maintenance outcome and freshness under `~/.local/state/mac-dotfiles/maintenance-status.json`. Native macOS notifications are emitted only when severity changes, when an unresolved alert exceeds its six-hour cooldown, or when the machine returns to healthy.
 
 ```bash
 mac-dotfiles.sh status                 # latest human-readable health state
@@ -255,12 +267,14 @@ The launcher provides a compact numbered menu for common actions:
 - generate a reproducible certification attestation
 - create, inspect, verify, and transactionally restore disaster-recovery snapshots
 - inspect or run the proactive health watchdog
+- fetch, certify, and transactionally apply a candidate update
 
 You can also call commands directly:
 ```bash
 mac-dotfiles.sh verify
 mac-dotfiles.sh repair
 mac-dotfiles.sh safe-update
+mac-dotfiles.sh certified-update run
 mac-dotfiles.sh rollback latest --dry-run
 mac-dotfiles.sh history
 mac-dotfiles.sh report
@@ -370,8 +384,10 @@ History lists safe-update runs and rollback backups with their size and file cou
 
 #### Update from repository
 ```bash
-chezmoi update --apply
+mac-dotfiles.sh update
 ```
+
+This is the certified transactional path. Use `mac-dotfiles.sh raw-update` only when you deliberately need to bypass the candidate gate.
 
 ### Adding Applications
 
@@ -413,6 +429,7 @@ brew bundle --global --verbose
 - `dot_local/bin/executable_mac-dotfiles-converge.sh.tmpl` - Profile, plan, drift, transaction, validation, and rollback engine
 - `dot_local/bin/executable_mac-dotfiles-migrate.sh.tmpl` - Versioned schema migration planner and runner
 - `dot_local/bin/executable_mac-dotfiles-certify.sh.tmpl` - Versioned repository and live-machine certification attestation
+- `dot_local/bin/executable_mac-dotfiles-certified-update.sh.tmpl` - Pre-apply candidate certification, transactional convergence, and last-known-good source rollback
 - `dot_local/bin/executable_mac-dotfiles-recovery.sh.tmpl` - Portable, optionally encrypted disaster-recovery snapshots and transactional restore
 - `dot_local/bin/executable_mac-dotfiles-watchdog.sh.tmpl` - Proactive health state, cooldown, and native macOS notifications
 - `run_onchange_configure-dock-darwin.sh.tmpl` - Dock configuration reapplied when its desired values change

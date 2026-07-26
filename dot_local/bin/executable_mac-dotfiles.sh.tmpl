@@ -7,6 +7,7 @@ INSTALL_SCRIPT="$CHEZMOI_SOURCE_DIR/install.sh"
 DOCTOR_SCRIPT="$CHEZMOI_SOURCE_DIR/doctor.sh"
 REPORT_SCRIPT="$HOME/.local/bin/mac-dotfiles-report.sh"
 SAFE_UPDATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-safe-update.sh"
+CERTIFIED_UPDATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-certified-update.sh"
 ROLLBACK_SCRIPT="$HOME/.local/bin/mac-dotfiles-rollback.sh"
 HISTORY_SCRIPT="$HOME/.local/bin/mac-dotfiles-history.sh"
 MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-maintenance.sh"
@@ -25,9 +26,11 @@ Commands:
   verify        Audit machine readiness without changing anything
   repair        Reconcile dotfiles, packages, health checks, and report
   safe-update   Run update with before/after reports and backups
+  certified-update  Certify a candidate, then apply it transactionally
   rollback      Restore files from a safe-update backup
   history       List or prune safe-update and rollback history
-  update        Run chezmoi update --apply
+  update        Run the certified transactional update
+  raw-update    Pull and apply directly with chezmoi (advanced escape hatch)
   report        Generate a Markdown machine report
   doctor        Run the repository health check
   explain       Explain doctor warnings and suggested fixes
@@ -74,11 +77,8 @@ run_repair() {
         return 1
     fi
 
-    echo "==> Updating desired-state source"
-    chezmoi git pull -- --ff-only </dev/null
-
-    echo "==> Running transactional convergence"
-    run_if_executable "$CONVERGE_SCRIPT" converge --yes
+    echo "==> Running certified desired-state update"
+    run_certified_update run
 
     echo "==> Running doctor auto-fixes"
     run_if_executable "$DOCTOR_SCRIPT" --fix || doctor_status=$?
@@ -97,6 +97,10 @@ run_safe_update() {
     run_if_executable "$SAFE_UPDATE_SCRIPT" "$@"
 }
 
+run_certified_update() {
+    run_if_executable "$CERTIFIED_UPDATE_SCRIPT" "$@"
+}
+
 run_rollback() {
     run_if_executable "$ROLLBACK_SCRIPT" "$@"
 }
@@ -106,6 +110,10 @@ run_history() {
 }
 
 run_update() {
+    run_certified_update run
+}
+
+run_raw_update() {
     if ! command -v chezmoi >/dev/null 2>&1; then
         echo "Missing command: chezmoi" >&2
         return 1
@@ -167,7 +175,7 @@ mac-dotfiles
 3. Safe update with backups
 4. Roll back a safe update
 5. Show backup history
-6. Update dotfiles
+6. Run certified transactional update
 7. Generate machine report
 8. Run doctor
 9. Explain doctor warnings
@@ -200,7 +208,7 @@ run_menu() {
             3) run_safe_update ;;
             4) run_rollback ;;
             5) run_history ;;
-            6) run_update ;;
+            6) run_certified_update run ;;
             7) run_report ;;
             8) run_doctor ;;
             9) run_explain ;;
@@ -236,9 +244,11 @@ case "$command" in
     verify) run_verify "$@" ;;
     repair | reconcile) run_repair "$@" ;;
     safe-update) run_safe_update "$@" ;;
+    certified-update) run_certified_update "$@" ;;
     rollback) run_rollback "$@" ;;
     history) run_history "$@" ;;
     update) run_update "$@" ;;
+    raw-update) run_raw_update "$@" ;;
     report) run_report "$@" ;;
     doctor) run_doctor "$@" ;;
     explain) run_explain "$@" ;;

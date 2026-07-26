@@ -49,6 +49,11 @@ REPORT
 echo "safe-update-called"
 SAFE
 
+    cat >"$env_dir/home/.local/bin/mac-dotfiles-certified-update.sh" <<'CERTIFIED'
+#!/usr/bin/env bash
+printf 'certified-update-called %s\n' "$*"
+CERTIFIED
+
     cat >"$env_dir/home/.local/bin/mac-dotfiles-rollback.sh" <<'ROLLBACK'
 #!/usr/bin/env bash
 printf 'rollback-called'
@@ -129,6 +134,7 @@ BREW
         "$env_dir/home/.local/share/chezmoi/doctor.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-report.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-safe-update.sh" \
+        "$env_dir/home/.local/bin/mac-dotfiles-certified-update.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-rollback.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-history.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh" \
@@ -166,6 +172,9 @@ test_direct_commands() {
     output="$(run_launcher "$env_dir" safe-update)"
     assert_contains "$output" "safe-update-called" "safe-update command should call safe update script"
 
+    output="$(run_launcher "$env_dir" certified-update run)"
+    assert_contains "$output" "certified-update-called run" "certified-update command should route to its orchestrator"
+
     output="$(run_launcher "$env_dir" rollback latest --dry-run)"
     assert_contains "$output" "rollback-called latest --dry-run" "rollback command should forward its arguments"
 
@@ -173,12 +182,14 @@ test_direct_commands() {
     assert_contains "$output" "history-called --prune --keep 10 --yes" "history command should forward its arguments"
 
     output="$(run_launcher "$env_dir" update)"
-    assert_contains "$output" "chezmoi update --apply" "update command should call chezmoi update"
+    assert_contains "$output" "certified-update-called run" "update command should use the certified updater"
+
+    output="$(run_launcher "$env_dir" raw-update)"
+    assert_contains "$output" "chezmoi update --apply" "raw-update should retain the direct chezmoi escape hatch"
 
     report_path="$env_dir/home/repair-report.md"
     output="$(run_launcher "$env_dir" repair "$report_path")"
-    assert_contains "$output" "chezmoi git pull -- --ff-only" "repair should update the desired-state source"
-    assert_contains "$output" "converge-engine converge --yes" "repair should use transactional convergence"
+    assert_contains "$output" "certified-update-called run" "repair should use the certified transactional updater"
     assert_contains "$output" "doctor-fix-called" "repair should run doctor --fix"
     assert_contains "$output" "Report written to $report_path" "repair should write a report"
     assert_contains "$(cat "$report_path")" "report-called" "repair report should contain report output"

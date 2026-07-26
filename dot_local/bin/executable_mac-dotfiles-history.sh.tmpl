@@ -7,6 +7,7 @@ SAFE_UPDATE_DIR="$STATE_DIR/safe-updates"
 ROLLBACK_DIR="$STATE_DIR/rollback-backups"
 TRANSACTIONS_DIR="$STATE_DIR/transactions"
 TRANSACTION_ROLLBACK_DIR="$STATE_DIR/transaction-rollback-backups"
+CERTIFIED_UPDATE_DIR="$STATE_DIR/certified-updates"
 PRUNE=0
 KEEP=10
 KEEP_SET=0
@@ -156,6 +157,24 @@ print_transactions() {
     [[ "$found" -eq 1 ]] || echo "No convergence transactions found."
 }
 
+print_certified_updates() {
+    local path id status candidate last_good found=0
+
+    echo
+    echo "Certified updates"
+    printf '%-24s  %-16s  %-9s  %-9s\n' "Run ID" "Status" "Candidate" "Last good"
+    while IFS= read -r path; do
+        [[ -f "$path/state.json" ]] || continue
+        found=1
+        id="${path##*/}"
+        status="$(jq -r '.status // "invalid"' "$path/state.json" 2>/dev/null || echo invalid)"
+        candidate="$(jq -r '.candidate_commit[0:7] // "-"' "$path/state.json" 2>/dev/null || echo -)"
+        last_good="$(jq -r '.last_known_good[0:7] // "-"' "$path/state.json" 2>/dev/null || echo -)"
+        printf '%-24s  %-16s  %-9s  %-9s\n' "$id" "$status" "$candidate" "$last_good"
+    done < <(list_directories "$CERTIFIED_UPDATE_DIR")
+    [[ "$found" -eq 1 ]] || echo "No certified-update history found."
+}
+
 print_transaction_rollbacks() {
     local path id files found=0
 
@@ -187,18 +206,20 @@ prune_directory() {
 }
 
 prune_history() {
-    local safe_count rollback_count transaction_count transaction_rollback_count
-    local safe_remove rollback_remove transaction_remove transaction_rollback_remove total_remove
+    local safe_count rollback_count transaction_count transaction_rollback_count certified_update_count
+    local safe_remove rollback_remove transaction_remove transaction_rollback_remove certified_update_remove total_remove
 
     safe_count="$(directory_count "$SAFE_UPDATE_DIR")"
     rollback_count="$(directory_count "$ROLLBACK_DIR")"
     transaction_count="$(directory_count "$TRANSACTIONS_DIR")"
     transaction_rollback_count="$(directory_count "$TRANSACTION_ROLLBACK_DIR")"
+    certified_update_count="$(directory_count "$CERTIFIED_UPDATE_DIR")"
     safe_remove=$((safe_count > KEEP ? safe_count - KEEP : 0))
     rollback_remove=$((rollback_count > KEEP ? rollback_count - KEEP : 0))
     transaction_remove=$((transaction_count > KEEP ? transaction_count - KEEP : 0))
     transaction_rollback_remove=$((transaction_rollback_count > KEEP ? transaction_rollback_count - KEEP : 0))
-    total_remove=$((safe_remove + rollback_remove + transaction_remove + transaction_rollback_remove))
+    certified_update_remove=$((certified_update_count > KEEP ? certified_update_count - KEEP : 0))
+    total_remove=$((safe_remove + rollback_remove + transaction_remove + transaction_rollback_remove + certified_update_remove))
 
     echo
     if [[ "$total_remove" -eq 0 ]]; then
@@ -206,7 +227,7 @@ prune_history() {
         return
     fi
 
-    echo "Prune plan: $safe_remove safe-update run(s), $rollback_remove rollback backup(s), $transaction_remove convergence transaction(s), $transaction_rollback_remove transaction rollback backup(s)."
+    echo "Prune plan: $safe_remove safe-update run(s), $rollback_remove rollback backup(s), $transaction_remove convergence transaction(s), $transaction_rollback_remove transaction rollback backup(s), $certified_update_remove certified update(s)."
     if [[ "$ASSUME_YES" -ne 1 ]]; then
         if [[ ! -t 0 ]]; then
             echo "Interactive confirmation required; rerun with --yes." >&2
@@ -227,6 +248,7 @@ prune_history() {
     prune_directory "$ROLLBACK_DIR"
     prune_directory "$TRANSACTIONS_DIR"
     prune_directory "$TRANSACTION_ROLLBACK_DIR"
+    prune_directory "$CERTIFIED_UPDATE_DIR"
 }
 
 echo "🕘 mac-dotfiles history"
@@ -234,6 +256,7 @@ echo "========================"
 print_safe_updates
 print_rollbacks
 print_transactions
+print_certified_updates
 print_transaction_rollbacks
 
 if [[ "$PRUNE" -eq 1 ]]; then

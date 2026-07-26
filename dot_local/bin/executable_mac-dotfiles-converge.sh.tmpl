@@ -22,6 +22,7 @@ BACKUP_INDEX=0
 TRANSACTION_ACTIVE=0
 ROLLBACK_PACKAGES=1
 MIGRATIONS_DRIFT=0
+LOCK_ACQUIRED=0
 
 usage() {
     cat <<'USAGE'
@@ -489,8 +490,13 @@ write_status() {
 
 acquire_lock() {
     mkdir -p "$STATE_DIR"
+    if [[ "${MAC_DOTFILES_LOCK_HELD:-0}" == "1" ]]; then
+        [[ -f "$LOCK_DIR/pid" ]] || die "Inherited operation lock is missing" 1
+        return
+    fi
     if mkdir "$LOCK_DIR" 2>/dev/null; then
         echo "$$" >"$LOCK_DIR/pid"
+        LOCK_ACQUIRED=1
         return
     fi
 
@@ -502,10 +508,14 @@ acquire_lock() {
     rm -rf "$LOCK_DIR"
     mkdir "$LOCK_DIR"
     echo "$$" >"$LOCK_DIR/pid"
+    LOCK_ACQUIRED=1
 }
 
 release_lock() {
-    rm -rf "$LOCK_DIR"
+    if [[ "$LOCK_ACQUIRED" -eq 1 ]]; then
+        rm -rf "$LOCK_DIR"
+        LOCK_ACQUIRED=0
+    fi
 }
 
 handle_signal() {

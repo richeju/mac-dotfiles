@@ -238,6 +238,17 @@ test_live_lock_refuses_second_convergence() {
     [[ "$status" -eq 1 ]] || fail "concurrent convergence should be refused"
 }
 
+test_inherited_lock_is_preserved() {
+    local root lock
+    root="$(setup_env)"
+    touch "$root/dirty"
+    lock="$root/home/.local/state/mac-dotfiles/operation.lock"
+    mkdir -p "$lock"
+    echo "$$" >"$lock/pid"
+    MAC_DOTFILES_LOCK_HELD=1 run_engine "$root" converge --yes >/dev/null
+    [[ -f "$lock/pid" ]] || fail "nested convergence must preserve its orchestrator's lock"
+}
+
 test_manual_transaction_rollback_restores_snapshot() {
     local root
     root="$(setup_env)"
@@ -259,5 +270,6 @@ test_failure_restores_files_and_absent_targets
 test_converge_can_switch_profile_transactionally
 test_incomplete_rollback_returns_distinct_status
 test_live_lock_refuses_second_convergence
+test_inherited_lock_is_preserved
 test_manual_transaction_rollback_restores_snapshot
 echo "[PASS] convergence tests completed"
