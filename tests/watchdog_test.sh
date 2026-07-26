@@ -42,6 +42,8 @@ STAT
     chmod +x "$root/home/.local/bin/mac-dotfiles-converge.sh" "$root/bin/git" "$root/bin/osascript" "$root/bin/stat"
     echo '{"schema_version":1,"kind":"mac-dotfiles-certification","commit":"test-commit","overall":"pass"}' >"$root/state/certifications/latest.json"
     echo '{"schema_version":1,"kind":"mac-dotfiles-certified-update","status":"success","last_known_good":"test-commit"}' >"$root/state/certified-update-state.json"
+    mkdir -p "$root/state/compliance"
+    echo '{"schema_version":1,"kind":"mac-dotfiles-nist-compliance","overall":"pass","summary":{"pass":16,"fail":0,"error":0},"results":[]}' >"$root/state/compliance/latest.json"
     echo snapshot >"$root/state/recovery-snapshots/mac-dotfiles-test.tar.gz"
     echo '===== 2026-01-01 00:00:00 :: mac-dotfiles maintenance =====' >"$root/state/maintenance.log"
     echo '✅ Maintenance completed' >>"$root/state/maintenance.log"
@@ -103,6 +105,19 @@ test_rejected_certified_update_is_critical() {
         "$root/state/watchdog/state.json" >/dev/null || fail "rejected candidate should be explicit and critical"
 }
 
+test_nist_findings_are_advisory() {
+    local root now
+    root="$(mktemp -d)"
+    now="$(date '+%s')"
+    setup_env "$root" "$now"
+    jq '.overall = "noncompliant" | .summary.fail = 3' "$root/state/compliance/latest.json" >"$root/compliance.json"
+    mv "$root/compliance.json" "$root/state/compliance/latest.json"
+
+    run_watchdog "$root" "$now" run --no-notify >/dev/null
+    jq -e '.status == "warning" and (.checks[] | select(.name == "compliance" and .detail == "NIST audit found 3 advisory finding(s)"))' \
+        "$root/state/watchdog/state.json" >/dev/null || fail "audit-only findings should warn without becoming critical"
+}
+
 test_transitions_and_cooldown() {
     local root now state notifications
     root="$(mktemp -d)"
@@ -143,5 +158,6 @@ test_transitions_and_cooldown
 test_stale_certification_commit_warns
 test_persisted_maintenance_failure_survives_manual_run
 test_rejected_certified_update_is_critical
+test_nist_findings_are_advisory
 test_manual_notification
 echo "[PASS] watchdog tests completed"

@@ -12,6 +12,7 @@ LOCK_DIR="$LOG_DIR/operation.lock"
 AUTO_CHEZMOI_UPDATE="${AUTO_CHEZMOI_UPDATE:-1}"
 BREW_MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-brew-maintenance.sh"
 CERTIFIED_UPDATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-certified-update.sh"
+COMPLIANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-compliance.sh"
 WATCHDOG_SCRIPT="$HOME/.local/bin/mac-dotfiles-watchdog.sh"
 maintenance_work_done=0
 certified_update_failed=0
@@ -101,6 +102,19 @@ fi
 if [[ "$certified_update_failed" -eq 1 ]]; then
     echo "❌ Maintenance completed with a certified update failure"
     exit 1
+fi
+
+if [[ -x "$COMPLIANCE_SCRIPT" ]]; then
+    echo "🛡️  Refreshing tailored NIST compliance evidence..."
+    compliance_status=0
+    "$COMPLIANCE_SCRIPT" audit --json >/dev/null || compliance_status=$?
+    case "$compliance_status" in
+        0) echo "✅ Tailored NIST compliance audit passed" ;;
+        1) echo "ℹ️  Tailored NIST audit recorded advisory findings" ;;
+        *) echo "⚠️  Tailored NIST compliance audit encountered evaluation errors" ;;
+    esac
+else
+    echo "⚠️  Compliance audit script is unavailable"
 fi
 
 echo "✅ Maintenance completed"

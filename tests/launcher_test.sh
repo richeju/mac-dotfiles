@@ -53,6 +53,10 @@ SAFE
 #!/usr/bin/env bash
 printf 'certified-update-called %s\n' "$*"
 CERTIFIED
+    cat >"$env_dir/home/.local/bin/mac-dotfiles-compliance.sh" <<'COMPLIANCE'
+#!/usr/bin/env bash
+printf 'compliance-called %s\n' "$*"
+COMPLIANCE
 
     cat >"$env_dir/home/.local/bin/mac-dotfiles-rollback.sh" <<'ROLLBACK'
 #!/usr/bin/env bash
@@ -135,6 +139,7 @@ BREW
         "$env_dir/home/.local/bin/mac-dotfiles-report.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-safe-update.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-certified-update.sh" \
+        "$env_dir/home/.local/bin/mac-dotfiles-compliance.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-rollback.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-history.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh" \
@@ -174,6 +179,9 @@ test_direct_commands() {
 
     output="$(run_launcher "$env_dir" certified-update run)"
     assert_contains "$output" "certified-update-called run" "certified-update command should route to its orchestrator"
+
+    output="$(run_launcher "$env_dir" compliance audit --json)"
+    assert_contains "$output" "compliance-called audit --json" "compliance command should forward audit options"
 
     output="$(run_launcher "$env_dir" rollback latest --dry-run)"
     assert_contains "$output" "rollback-called latest --dry-run" "rollback command should forward its arguments"

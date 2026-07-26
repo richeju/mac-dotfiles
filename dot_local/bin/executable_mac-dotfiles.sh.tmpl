@@ -8,6 +8,7 @@ DOCTOR_SCRIPT="$CHEZMOI_SOURCE_DIR/doctor.sh"
 REPORT_SCRIPT="$HOME/.local/bin/mac-dotfiles-report.sh"
 SAFE_UPDATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-safe-update.sh"
 CERTIFIED_UPDATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-certified-update.sh"
+COMPLIANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-compliance.sh"
 ROLLBACK_SCRIPT="$HOME/.local/bin/mac-dotfiles-rollback.sh"
 HISTORY_SCRIPT="$HOME/.local/bin/mac-dotfiles-history.sh"
 MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-maintenance.sh"
@@ -27,6 +28,7 @@ Commands:
   repair        Reconcile dotfiles, packages, health checks, and report
   safe-update   Run update with before/after reports and backups
   certified-update  Certify a candidate, then apply it transactionally
+  compliance    Audit the tailored NIST baseline and inspect evidence
   rollback      Restore files from a safe-update backup
   history       List or prune safe-update and rollback history
   update        Run the certified transactional update
@@ -189,6 +191,7 @@ mac-dotfiles
 17. Certify this Mac
 18. Disaster recovery snapshots
 19. Show proactive health status
+20. Audit tailored NIST compliance
 0. Exit
 
 MENU
@@ -222,6 +225,7 @@ run_menu() {
             17) run_if_executable "$CERTIFY_SCRIPT" ;;
             18) run_if_executable "$RECOVERY_SCRIPT" list ;;
             19) run_if_executable "$WATCHDOG_SCRIPT" status ;;
+            20) run_if_executable "$COMPLIANCE_SCRIPT" audit ;;
             0 | q | quit | exit)
                 echo "Bye."
                 return 0
@@ -245,6 +249,7 @@ case "$command" in
     repair | reconcile) run_repair "$@" ;;
     safe-update) run_safe_update "$@" ;;
     certified-update) run_certified_update "$@" ;;
+    compliance) run_if_executable "$COMPLIANCE_SCRIPT" "$@" ;;
     rollback) run_rollback "$@" ;;
     history) run_history "$@" ;;
     update) run_update "$@" ;;

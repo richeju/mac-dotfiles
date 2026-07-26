@@ -51,6 +51,9 @@ CONVERGE
     echo "maintenance-ok" >"$env_dir/home/.local/state/mac-dotfiles/maintenance.log"
     echo '{"schema_version":1,"kind":"mac-dotfiles-certified-update","status":"success","candidate_commit":"candidate-commit","last_known_good":"candidate-commit"}' \
         >"$env_dir/home/.local/state/mac-dotfiles/certified-update-state.json"
+    mkdir -p "$env_dir/home/.local/state/mac-dotfiles/compliance"
+    echo '{"schema_version":1,"kind":"mac-dotfiles-nist-compliance","overall":"noncompliant","timestamp":"2026-07-26T00:00:00Z","summary":{"pass":12,"fail":4,"error":0}}' \
+        >"$env_dir/home/.local/state/mac-dotfiles/compliance/latest.json"
     echo "launchd-ok" >"$env_dir/home/.local/state/mac-dotfiles/launchd.log"
     echo "$env_dir"
 }
@@ -143,6 +146,7 @@ test_report_happy_path() {
     assert_contains "$output" "## mac-dotfiles doctor report" "report should include doctor output"
     assert_contains "$output" "Active profile: \`developer\`" "report should include active desired-state profile"
     assert_contains "$output" "Certified update: success" "report should include certified-update state"
+    assert_contains "$output" "NIST compliance: noncompliant (12 pass, 4 findings, 0 errors" "report should summarize NIST evidence"
     assert_contains "$output" "maintenance-ok" "report should include maintenance log"
     assert_contains "$output" "launchd-ok" "report should include launchd log"
 }
