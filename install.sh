@@ -230,6 +230,12 @@ run_verify() {
         verify_warn "Maintenance script is missing or not executable"
     fi
 
+    if [[ -x "$HOME/.local/bin/mac-dotfiles-certified-update.sh" ]]; then
+        verify_ok "Certified update script is installed"
+    else
+        verify_warn "Certified update script is missing or not executable"
+    fi
+
     if [[ -f "$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist" ]]; then
         verify_ok "Maintenance LaunchAgent plist exists"
     else
@@ -349,6 +355,12 @@ print_install_summary() {
         summary_ok "Maintenance script installed"
     else
         summary_warn "Maintenance script is missing"
+    fi
+
+    if [[ -x "$HOME/.local/bin/mac-dotfiles-certified-update.sh" ]]; then
+        summary_ok "Certified transactional updater installed"
+    else
+        summary_warn "Certified transactional updater is missing"
     fi
 
     if [[ "$MINIMAL_MODE" == "true" ]]; then
@@ -523,8 +535,9 @@ echo ""
 echo "Useful commands:"
 echo "  mac-dotfiles.sh   - Optional local launcher"
 echo "  mac-dotfiles.sh repair - Reconcile dotfiles, packages, and health checks"
+echo "  mac-dotfiles.sh update - Certify and transactionally apply updates"
 echo "  chezmoi diff     - See what would change"
 echo "  chezmoi apply    - Apply changes"
-echo "  chezmoi update   - Pull and apply latest changes"
+echo "  mac-dotfiles.sh raw-update - Pull and apply directly (advanced)"
 echo "  chezmoi edit X   - Edit a dotfile"
 echo ""

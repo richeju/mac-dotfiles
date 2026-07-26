@@ -13,6 +13,7 @@ MIGRATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-migrate.sh"
 LATEST_CERTIFICATION="$STATE_DIR/certifications/latest.json"
 RECOVERY_DIR="$STATE_DIR/recovery-snapshots"
 WATCHDOG_STATE="$STATE_DIR/watchdog/state.json"
+CERTIFIED_UPDATE_STATE="$STATE_DIR/certified-update-state.json"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-report.XXXXXX")"
 
 cleanup() {
@@ -245,6 +246,11 @@ if [[ -f "$LATEST_CERTIFICATION" ]]; then
     echo "- Latest certification: $(jq -r '"\(.overall) (`\(.commit[0:7])`, \(.timestamp))"' "$LATEST_CERTIFICATION")"
 else
     echo "- Latest certification: none"
+fi
+if [[ -f "$CERTIFIED_UPDATE_STATE" ]]; then
+    echo "- Certified update: $(jq -r '"\(.status) (candidate `\(.candidate_commit[0:7])`, last known good `\(.last_known_good[0:7])`)"' "$CERTIFIED_UPDATE_STATE" 2>/dev/null || echo invalid)"
+else
+    echo "- Certified update: none"
 fi
 latest_recovery="$(find "$RECOVERY_DIR" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tar.gz.enc' \) 2>/dev/null | sort | tail -n 1 || true)"
 if [[ -n "$latest_recovery" ]]; then

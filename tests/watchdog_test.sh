@@ -41,6 +41,7 @@ fi
 STAT
     chmod +x "$root/home/.local/bin/mac-dotfiles-converge.sh" "$root/bin/git" "$root/bin/osascript" "$root/bin/stat"
     echo '{"schema_version":1,"kind":"mac-dotfiles-certification","commit":"test-commit","overall":"pass"}' >"$root/state/certifications/latest.json"
+    echo '{"schema_version":1,"kind":"mac-dotfiles-certified-update","status":"success","last_known_good":"test-commit"}' >"$root/state/certified-update-state.json"
     echo snapshot >"$root/state/recovery-snapshots/mac-dotfiles-test.tar.gz"
     echo '===== 2026-01-01 00:00:00 :: mac-dotfiles maintenance =====' >"$root/state/maintenance.log"
     echo '✅ Maintenance completed' >>"$root/state/maintenance.log"
@@ -88,6 +89,20 @@ test_persisted_maintenance_failure_survives_manual_run() {
         "$root/state/watchdog/state.json" >/dev/null || fail "persisted maintenance failure should be explicit"
 }
 
+test_rejected_certified_update_is_critical() {
+    local root now
+    root="$(mktemp -d)"
+    now="$(date '+%s')"
+    setup_env "$root" "$now"
+    jq '.status = "rejected" | .candidate_commit = "bad-commit"' "$root/state/certified-update-state.json" \
+        >"$root/update-state.json"
+    mv "$root/update-state.json" "$root/state/certified-update-state.json"
+
+    run_watchdog "$root" "$now" run --no-notify >/dev/null 2>&1 || true
+    jq -e '.checks[] | select(.name == "certified-update" and .status == "critical" and .detail == "latest certified update is rejected")' \
+        "$root/state/watchdog/state.json" >/dev/null || fail "rejected candidate should be explicit and critical"
+}
+
 test_transitions_and_cooldown() {
     local root now state notifications
     root="$(mktemp -d)"
@@ -127,5 +142,6 @@ test_manual_notification() {
 test_transitions_and_cooldown
 test_stale_certification_commit_warns
 test_persisted_maintenance_failure_survives_manual_run
+test_rejected_certified_update_is_critical
 test_manual_notification
 echo "[PASS] watchdog tests completed"

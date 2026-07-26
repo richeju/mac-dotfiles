@@ -40,6 +40,14 @@ create_transaction() {
     printf 'status=success\nprofile=full\n' >"$transaction_dir/status.env"
 }
 
+create_certified_update() {
+    local env_dir="$1" run_id="$2" status="${3:-success}"
+    local update_dir="$env_dir/home/.local/state/mac-dotfiles/certified-updates/$run_id"
+    mkdir -p "$update_dir"
+    printf '{"status":"%s","candidate_commit":"candidate-commit","last_known_good":"good-commit"}\n' "$status" \
+        >"$update_dir/state.json"
+}
+
 run_history() {
     local env_dir="$1"
     shift
@@ -53,6 +61,7 @@ test_history_lists_latest_entries() {
     create_safe_update "$env_dir" "20260102-120000"
     create_rollback "$env_dir" "20260103-120000-from-20260102-120000"
     create_transaction "$env_dir" "20260104-120000-test"
+    create_certified_update "$env_dir" "20260105-120000-test"
     newest="$env_dir/home/.local/state/mac-dotfiles/safe-updates/20260102-120000"
     echo before >"$newest/report-before.md"
     echo after >"$newest/report-after.md"
@@ -65,6 +74,8 @@ test_history_lists_latest_entries() {
     assert_contains "$output" "Rollback backups" "history should include rollback backups"
     assert_contains "$output" "20260103-120000-from-20260102-120000" "history should include rollback ID"
     assert_contains "$output" "20260104-120000-test" "history should include convergence transaction"
+    assert_contains "$output" "Certified updates" "history should include certified updates"
+    assert_contains "$output" "20260105-120000-test" "history should include certified update evidence"
 }
 
 test_prune_keeps_newest_entries() {
@@ -78,6 +89,8 @@ test_prune_keeps_newest_entries() {
     create_rollback "$env_dir" "20260103-130000-from-20260103-120000"
     create_transaction "$env_dir" "20260101-140000-test"
     create_transaction "$env_dir" "20260103-140000-test"
+    create_certified_update "$env_dir" "20260101-150000-test"
+    create_certified_update "$env_dir" "20260103-150000-test"
 
     output="$(run_history "$env_dir" --prune --keep 1 --yes)"
 
@@ -88,6 +101,8 @@ test_prune_keeps_newest_entries() {
     [[ ! -e "$state_dir/rollback-backups/20260101-130000-from-20260101-120000" ]] || fail "older rollback should be removed"
     [[ -d "$state_dir/transactions/20260103-140000-test" ]] || fail "newest transaction should be kept"
     [[ ! -e "$state_dir/transactions/20260101-140000-test" ]] || fail "older transaction should be removed"
+    [[ -d "$state_dir/certified-updates/20260103-150000-test" ]] || fail "newest certified update should be kept"
+    [[ ! -e "$state_dir/certified-updates/20260101-150000-test" ]] || fail "older certified update should be removed"
 }
 
 main() {

@@ -48,7 +48,12 @@ SCRIPT
 #!/usr/bin/env bash
 exit 0
 SCRIPT
-    chmod +x "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh" "$env_dir/home/.local/bin/mac-dotfiles.sh"
+    cat >"$env_dir/home/.local/bin/mac-dotfiles-certified-update.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+exit 0
+SCRIPT
+    chmod +x "$env_dir/home/.local/bin/mac-dotfiles-maintenance.sh" "$env_dir/home/.local/bin/mac-dotfiles.sh" \
+        "$env_dir/home/.local/bin/mac-dotfiles-certified-update.sh"
     echo "$env_dir"
 }
 

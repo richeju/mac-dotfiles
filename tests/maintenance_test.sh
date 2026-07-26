@@ -13,30 +13,20 @@ setup_env() {
     local env_dir
     env_dir="$(mktemp -d)"
     mkdir -p "$env_dir/home/.local/bin" "$env_dir/home/.local/share/chezmoi" \
-        "$env_dir/home/.local/state/mac-dotfiles/certifications"
-    echo 'same-commit' >"$env_dir/home/current-commit"
-    echo '{"schema_version":1,"kind":"mac-dotfiles-certification","commit":"same-commit","overall":"pass"}' \
-        >"$env_dir/home/.local/state/mac-dotfiles/certifications/latest.json"
+        "$env_dir/home/.local/state/mac-dotfiles"
     cat >"$env_dir/home/.local/bin/mac-dotfiles-brew-maintenance.sh" <<'SCRIPT'
 run_brew_maintenance() { echo "brew-maintenance-called"; }
 SCRIPT
-    cat >"$env_dir/home/.local/bin/git" <<'SCRIPT'
+    cat >"$env_dir/home/.local/bin/mac-dotfiles-certified-update.sh" <<'SCRIPT'
 #!/usr/bin/env bash
-cat "$HOME/current-commit"
-SCRIPT
-    cat >"$env_dir/home/.local/bin/mac-dotfiles-certify.sh" <<'SCRIPT'
-#!/usr/bin/env bash
-echo "certify-called:$*"
-[[ ! -f "$HOME/certification-fails" ]] || exit 1
-commit="$(cat "$HOME/current-commit")"
-printf '{"schema_version":1,"kind":"mac-dotfiles-certification","commit":"%s","overall":"pass"}\n' "$commit" \
-  >"$HOME/.local/state/mac-dotfiles/certifications/latest.json"
+echo "certified-update-called:$*:lock=${MAC_DOTFILES_LOCK_HELD:-0}"
+[[ ! -f "$HOME/certified-update-fails" ]]
 SCRIPT
     cat >"$env_dir/home/.local/bin/mac-dotfiles-watchdog.sh" <<'SCRIPT'
 #!/usr/bin/env bash
 echo "watchdog-called:${MAC_DOTFILES_MAINTENANCE_EXIT_STATUS:-missing}"
 SCRIPT
-    chmod +x "$env_dir/home/.local/bin/git" "$env_dir/home/.local/bin/mac-dotfiles-certify.sh" \
+    chmod +x "$env_dir/home/.local/bin/mac-dotfiles-certified-update.sh" \
         "$env_dir/home/.local/bin/mac-dotfiles-watchdog.sh"
     echo "$env_dir"
 }
@@ -55,71 +45,23 @@ SCRIPT
     chmod +x "$env_dir/home/.local/bin/chezmoi" "$env_dir/home/.local/bin/brew"
 
     output="$(HOME="$env_dir/home" PATH="/usr/bin:/bin:/usr/sbin:/sbin" bash "$MAINTENANCE_SCRIPT")"
-    [[ "$output" == *"chezmoi-called"* ]] || fail "maintenance should find chezmoi from its managed PATH"
+    [[ "$output" == *"certified-update-called:run:lock=1"* ]] ||
+        fail "maintenance should run the certified updater under its shared lock"
     [[ "$output" == *"brew-maintenance-called"* ]] || fail "maintenance should run Homebrew work"
     [[ "$output" == *"Maintenance completed"* ]] || fail "maintenance should report success after doing work"
     [[ "$output" == *"watchdog-called:0"* ]] || fail "successful maintenance should update watchdog health"
-    [[ "$output" == *"Certification already matches the current commit"* ]] ||
-        fail "unchanged certified commits should skip redundant certification"
-    [[ "$output" != *"certify-called:"* ]] || fail "matching commits should not run certification"
     jq -e '.schema_version == 1 and .exit_status == 0' \
         "$env_dir/home/.local/state/mac-dotfiles/maintenance-status.json" >/dev/null ||
         fail "successful maintenance should persist its status"
 }
 
-test_updated_source_is_certified() {
-    local env_dir output
-    env_dir="$(setup_env)"
-    cat >"$env_dir/home/.local/bin/chezmoi" <<'SCRIPT'
-#!/usr/bin/env bash
-echo 'new-commit' >"$HOME/current-commit"
-echo "chezmoi-called"
-SCRIPT
-    cat >"$env_dir/home/.local/bin/brew" <<'SCRIPT'
-#!/usr/bin/env bash
-exit 0
-SCRIPT
-    chmod +x "$env_dir/home/.local/bin/chezmoi" "$env_dir/home/.local/bin/brew"
-
-    output="$(HOME="$env_dir/home" PATH="/usr/bin:/bin:/usr/sbin:/sbin" bash "$MAINTENANCE_SCRIPT")"
-    [[ "$output" == *"Dotfiles changed; certifying commit new-com"* ]] ||
-        fail "a changed source commit should trigger certification"
-    [[ "$output" == *"certify-called:--skip-live"* ]] ||
-        fail "automatic certification should skip live checks"
-    [[ "$output" == *"watchdog-called:0"* ]] || fail "successful certification should keep maintenance healthy"
-}
-
-test_uncertified_current_source_is_certified() {
-    local env_dir output
-    env_dir="$(setup_env)"
-    jq '.commit = "old-commit"' "$env_dir/home/.local/state/mac-dotfiles/certifications/latest.json" \
-        >"$env_dir/home/stale-certification.json"
-    mv "$env_dir/home/stale-certification.json" \
-        "$env_dir/home/.local/state/mac-dotfiles/certifications/latest.json"
-    cat >"$env_dir/home/.local/bin/chezmoi" <<'SCRIPT'
-#!/usr/bin/env bash
-echo "chezmoi-called"
-SCRIPT
-    cat >"$env_dir/home/.local/bin/brew" <<'SCRIPT'
-#!/usr/bin/env bash
-exit 0
-SCRIPT
-    chmod +x "$env_dir/home/.local/bin/chezmoi" "$env_dir/home/.local/bin/brew"
-
-    output="$(HOME="$env_dir/home" PATH="/usr/bin:/bin:/usr/sbin:/sbin" bash "$MAINTENANCE_SCRIPT")"
-    [[ "$output" == *"Certifying current dotfiles commit same-co"* ]] ||
-        fail "an uncertified current commit should self-heal"
-    [[ "$output" == *"certify-called:--skip-live"* ]] ||
-        fail "self-healing certification should skip live checks"
-}
-
-test_failed_certification_fails_maintenance_after_other_work() {
+test_failed_certified_update_fails_maintenance_after_other_work() {
     local env_dir output status
     env_dir="$(setup_env)"
-    touch "$env_dir/home/certification-fails"
+    touch "$env_dir/home/certified-update-fails"
     cat >"$env_dir/home/.local/bin/chezmoi" <<'SCRIPT'
 #!/usr/bin/env bash
-echo 'failed-commit' >"$HOME/current-commit"
+exit 0
 SCRIPT
     cat >"$env_dir/home/.local/bin/brew" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -131,11 +73,11 @@ SCRIPT
     output="$(HOME="$env_dir/home" PATH="/usr/bin:/bin:/usr/sbin:/sbin" bash "$MAINTENANCE_SCRIPT" 2>&1)"
     status=$?
     set -e
-    [[ "$status" -eq 1 ]] || fail "failed automatic certification should fail maintenance"
-    [[ "$output" == *"brew-maintenance-called"* ]] || fail "Homebrew work should continue after certification fails"
-    [[ "$output" == *"watchdog-called:1"* ]] || fail "certification failure should reach the watchdog"
+    [[ "$status" -eq 1 ]] || fail "failed certified update should fail maintenance"
+    [[ "$output" == *"brew-maintenance-called"* ]] || fail "Homebrew work should continue after update failure"
+    [[ "$output" == *"watchdog-called:1"* ]] || fail "update failure should reach the watchdog"
     jq -e '.exit_status == 1' "$env_dir/home/.local/state/mac-dotfiles/maintenance-status.json" >/dev/null ||
-        fail "certification failure should persist a failed maintenance status"
+        fail "certified update failure should persist a failed maintenance status"
 }
 
 test_no_available_work_fails() {
@@ -155,8 +97,6 @@ test_no_available_work_fails() {
 }
 
 test_launchd_path_finds_managed_tools
-test_updated_source_is_certified
-test_uncertified_current_source_is_certified
-test_failed_certification_fails_maintenance_after_other_work
+test_failed_certified_update_fails_maintenance_after_other_work
 test_no_available_work_fails
 echo "[PASS] maintenance tests completed"

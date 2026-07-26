@@ -1,0 +1,246 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+export PATH="${MAC_DOTFILES_PATH:-$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin}"
+
+STATE_DIR="${MAC_DOTFILES_STATE_DIR:-$HOME/.local/state/mac-dotfiles}"
+SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
+LOCK_DIR="$STATE_DIR/operation.lock"
+UPDATE_DIR="$STATE_DIR/certified-updates"
+STATE_FILE="$STATE_DIR/certified-update-state.json"
+CERTIFICATION_FILE="$STATE_DIR/certifications/latest.json"
+RUN_ID="${MAC_DOTFILES_RUN_ID:-$(date '+%Y%m%d-%H%M%S')-$$}"
+RUN_DIR="$UPDATE_DIR/$RUN_ID"
+CERTIFY_SCRIPT="${MAC_DOTFILES_CERTIFY_SCRIPT:-$SOURCE_DIR/dot_local/bin/executable_mac-dotfiles-certify.sh.tmpl}"
+CONVERGE_SCRIPT="${MAC_DOTFILES_CONVERGE_SCRIPT:-$SOURCE_DIR/dot_local/bin/executable_mac-dotfiles-converge.sh.tmpl}"
+LOCK_ACQUIRED=0
+WORK_DIR=""
+
+usage() {
+    cat <<'USAGE'
+Usage: mac-dotfiles-certified-update.sh [run|status [--json]]
+
+Fetches a fast-forward candidate, certifies it before application, converges
+transactionally, and restores the last known-good source on failure.
+USAGE
+}
+
+die() {
+    echo "✗ $1" >&2
+    exit "${2:-1}"
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || die "Required command '$1' is missing"
+}
+
+acquire_lock() {
+    mkdir -p "$STATE_DIR"
+    if [[ "${MAC_DOTFILES_LOCK_HELD:-0}" == "1" ]]; then
+        [[ -f "$LOCK_DIR/pid" ]] || die "Inherited operation lock is missing"
+        return
+    fi
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+        echo "$$" >"$LOCK_DIR/pid"
+        LOCK_ACQUIRED=1
+        return
+    fi
+    die "Another mac-dotfiles operation is running (lock: $LOCK_DIR)"
+}
+
+cleanup() {
+    [[ -z "$WORK_DIR" ]] || rm -rf "$WORK_DIR"
+    if [[ "$LOCK_ACQUIRED" -eq 1 ]]; then
+        rm -f "$LOCK_DIR/pid"
+        rmdir "$LOCK_DIR" 2>/dev/null || true
+    fi
+}
+
+current_commit() {
+    git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null
+}
+
+certification_matches() {
+    local commit="$1"
+    [[ -f "$CERTIFICATION_FILE" ]] || return 1
+    jq -e --arg commit "$commit" \
+        '.schema_version == 1 and .kind == "mac-dotfiles-certification" and .overall == "pass" and .commit == $commit' \
+        "$CERTIFICATION_FILE" >/dev/null 2>&1
+}
+
+write_state() {
+    local status="$1" previous="$2" candidate="$3" last_good="$4" detail="$5"
+    local timestamp temp latest_temp
+    timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    mkdir -p "$RUN_DIR"
+    temp="$RUN_DIR/state.json.tmp"
+    jq -n \
+        --arg status "$status" --arg run_id "$RUN_ID" \
+        --arg previous_commit "$previous" --arg candidate_commit "$candidate" \
+        --arg last_known_good "$last_good" --arg detail "$detail" --arg updated_at "$timestamp" \
+        '{schema_version:1,kind:"mac-dotfiles-certified-update",run_id:$run_id,status:$status,previous_commit:$previous_commit,candidate_commit:$candidate_commit,last_known_good:$last_known_good,detail:$detail,updated_at:$updated_at}' \
+        >"$temp"
+    chmod 600 "$temp"
+    mv "$temp" "$RUN_DIR/state.json"
+    latest_temp="$STATE_FILE.tmp.$$"
+    cp "$RUN_DIR/state.json" "$latest_temp"
+    chmod 600 "$latest_temp"
+    mv "$latest_temp" "$STATE_FILE"
+}
+
+restore_certification() {
+    if [[ -f "$WORK_DIR/certification.json" ]]; then
+        mkdir -p "$(dirname "$CERTIFICATION_FILE")"
+        cp "$WORK_DIR/certification.json" "$CERTIFICATION_FILE"
+    else
+        rm -f "$CERTIFICATION_FILE"
+    fi
+}
+
+restore_source() {
+    local commit="$1"
+    [[ -n "$commit" ]] || return 1
+    git -C "$SOURCE_DIR" reset --hard "$commit" >/dev/null
+}
+
+restore_rejected_candidate() {
+    local previous="$1" candidate="$2"
+    restore_certification
+    [[ "$candidate" == "$previous" ]] || restore_source "$previous"
+}
+
+last_known_good() {
+    local previous="$1" recorded=""
+    if certification_matches "$previous"; then
+        echo "$previous"
+        return
+    fi
+    if [[ -f "$STATE_FILE" ]]; then
+        recorded="$(jq -r '.last_known_good // empty' "$STATE_FILE" 2>/dev/null || true)"
+    fi
+    echo "$recorded"
+}
+
+run_update() {
+    local previous candidate last_good convergence_status=0
+    require_command chezmoi
+    require_command git
+    require_command jq
+    acquire_lock
+    trap cleanup EXIT INT TERM
+    mkdir -p "$UPDATE_DIR"
+    WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-certified-update.XXXXXX")"
+
+    previous="$(current_commit)" || die "Current source commit is unavailable"
+    candidate="$previous"
+    last_good="$(last_known_good "$previous")"
+    [[ ! -f "$CERTIFICATION_FILE" ]] || cp "$CERTIFICATION_FILE" "$WORK_DIR/certification.json"
+
+    echo "🛡️  Certified safe update"
+    echo "========================"
+    echo "Current: ${previous:0:7}"
+
+    if [[ -n "$(git -C "$SOURCE_DIR" status --porcelain 2>/dev/null)" ]]; then
+        write_state "blocked" "$previous" "$candidate" "$last_good" "source repository has local changes"
+        die "Source repository has local changes; refusing an automatic update"
+    fi
+
+    write_state "fetching" "$previous" "$candidate" "$last_good" "fetching fast-forward candidate"
+    echo "⬇️  Fetching candidate with fast-forward only..."
+    if ! chezmoi git pull -- --ff-only </dev/null; then
+        candidate="$(current_commit 2>/dev/null || echo "$previous")"
+        if [[ "$candidate" != "$previous" ]] && ! restore_source "$previous"; then
+            write_state "rollback_failed" "$previous" "$candidate" "$last_good" "candidate fetch and source rollback failed"
+            die "Candidate fetch failed and the source could not be restored" 3
+        fi
+        write_state "fetch_failed" "$previous" "$candidate" "$last_good" "candidate fetch failed"
+        die "Unable to fetch a fast-forward candidate"
+    fi
+    candidate="$(current_commit)" || die "Candidate commit is unavailable"
+    echo "Candidate: ${candidate:0:7}"
+
+    if certification_matches "$candidate"; then
+        echo "🧪 Candidate already has a matching passing certification"
+    else
+        [[ -f "$CERTIFY_SCRIPT" ]] || {
+            if ! restore_rejected_candidate "$previous" "$candidate"; then
+                write_state "rollback_failed" "$previous" "$candidate" "$last_good" "candidate certifier is missing and source rollback failed"
+                die "Candidate certifier is missing and the source could not be restored" 3
+            fi
+            write_state "rejected" "$previous" "$candidate" "$last_good" "candidate certifier is missing"
+            die "Candidate certifier is missing: $CERTIFY_SCRIPT"
+        }
+        write_state "certifying" "$previous" "$candidate" "$last_good" "certifying candidate before application"
+        echo "🧪 Certifying candidate before application..."
+        if ! CHEZMOI_SOURCE_DIR="$SOURCE_DIR" MAC_DOTFILES_STATE_DIR="$STATE_DIR" \
+            bash "$CERTIFY_SCRIPT" --skip-live; then
+            if ! restore_rejected_candidate "$previous" "$candidate"; then
+                write_state "rollback_failed" "$previous" "$candidate" "$last_good" "candidate certification and source rollback failed"
+                die "Candidate was rejected and the source could not be restored" 3
+            fi
+            write_state "rejected" "$previous" "$candidate" "$last_good" "candidate certification failed"
+            die "Candidate ${candidate:0:7} was rejected before application"
+        fi
+        if ! certification_matches "$candidate"; then
+            if ! restore_rejected_candidate "$previous" "$candidate"; then
+                write_state "rollback_failed" "$previous" "$candidate" "$last_good" "candidate attestation mismatched and source rollback failed"
+                die "Candidate attestation mismatched and the source could not be restored" 3
+            fi
+            write_state "rejected" "$previous" "$candidate" "$last_good" "candidate attestation is missing or mismatched"
+            die "Candidate did not produce a matching passing attestation"
+        fi
+    fi
+
+    write_state "applying" "$previous" "$candidate" "$last_good" "candidate certified; transactional convergence started"
+    echo "🔄 Applying certified candidate transactionally..."
+    if MAC_DOTFILES_LOCK_HELD=1 CHEZMOI_SOURCE_DIR="$SOURCE_DIR" MAC_DOTFILES_STATE_DIR="$STATE_DIR" \
+        bash "$CONVERGE_SCRIPT" converge --yes; then
+        :
+    else
+        convergence_status=$?
+        restore_certification
+        if [[ "$candidate" != "$previous" ]] && ! restore_source "$previous"; then
+            write_state "rollback_failed" "$previous" "$candidate" "$last_good" "convergence and source rollback failed"
+            die "Convergence failed and the source could not be restored" 3
+        fi
+        if [[ "$convergence_status" -eq 3 ]]; then
+            write_state "rollback_failed" "$previous" "$candidate" "$last_good" "convergence reported an incomplete managed-file rollback"
+            die "Convergence failed and managed-file rollback was incomplete" 3
+        fi
+        write_state "rolled_back" "$previous" "$candidate" "$last_good" "convergence failed; source and managed files restored"
+        die "Certified candidate failed convergence and was rolled back" "$convergence_status"
+    fi
+
+    last_good="$candidate"
+    write_state "success" "$previous" "$candidate" "$last_good" "candidate certified and converged successfully"
+    echo "✅ Certified update completed"
+    echo "Last known good: ${last_good:0:7}"
+}
+
+show_status() {
+    local json=0
+    case "${1:-}" in
+        "") ;;
+        --json) json=1 ;;
+        *) die "Unknown status option: $1" 2 ;;
+    esac
+    [[ -f "$STATE_FILE" ]] || die "No certified-update state found"
+    if [[ "$json" -eq 1 ]]; then
+        cat "$STATE_FILE"
+    else
+        jq -r '"Certified update: \(.status)\nUpdated: \(.updated_at)\nCandidate: \(.candidate_commit[0:7])\nLast known good: \(.last_known_good[0:7])\nDetail: \(.detail)"' "$STATE_FILE"
+    fi
+}
+
+command="${1:-run}"
+shift || true
+case "$command" in
+    run)
+        [[ $# -eq 0 ]] || die "The run command takes no arguments" 2
+        run_update
+        ;;
+    status) show_status "$@" ;;
+    help | -h | --help) usage ;;
+    *) die "Unknown command: $command" 2 ;;
+esac
