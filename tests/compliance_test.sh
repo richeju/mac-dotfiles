@@ -39,12 +39,12 @@ MOCK
 case "$*" in
   "read /Library/Preferences/com.apple.SoftwareUpdate CriticalUpdateInstall") echo 1 ;;
   "-currentHost read com.apple.screensaver idleTime")
-    if [[ -f "$TEST_ROOT/remediated-timeout" ]]; then echo 900
+    if [[ -f "$TEST_ROOT/remediated-timeout" ]]; then cat "$TEST_ROOT/remediated-timeout"
     elif [[ -f "$TEST_ROOT/noncompliant" ]]; then exit 1
     else echo 600
     fi
     ;;
-  "-currentHost write com.apple.screensaver idleTime -int 900") touch "$TEST_ROOT/remediated-timeout" ;;
+  "-currentHost write com.apple.screensaver idleTime -int "*) printf '%s\n' "${*: -1}" >"$TEST_ROOT/remediated-timeout" ;;
   "-currentHost delete com.apple.screensaver idleTime") rm -f "$TEST_ROOT/remediated-timeout" ;;
   "read com.apple.screensaver askForPassword") echo 1 ;;
   "read com.apple.screensaver askForPasswordDelay") echo 0 ;;
@@ -200,6 +200,26 @@ test_safe_remediation_requires_preview_or_confirmation() {
         fail "non-interactive remediation should require explicit confirmation"
 }
 
+test_timeout_policy_has_one_versioned_source() {
+    local root baseline output status
+    root="$(setup_env)"
+    baseline="$root/baseline.json"
+    jq '.tailoring.parameters.screensaver_timeout_seconds = 300' \
+        "$REPO_ROOT/compliance/personal-nist-low.json" >"$baseline"
+
+    output="$(MAC_DOTFILES_COMPLIANCE_BASELINE="$baseline" run_compliance "$root" remediate --safe --dry-run)"
+    [[ "$output" == *"Set the inactivity timeout to 300 seconds"* ]] ||
+        fail "remediation should read its timeout from the versioned baseline"
+
+    set +e
+    output="$(MAC_DOTFILES_COMPLIANCE_BASELINE="$baseline" run_compliance "$root" audit --json)"
+    status=$?
+    set -e
+    [[ "$status" -eq 1 ]] || fail "the audit should enforce the tailored timeout"
+    jq -e '.results[] | select(.id == "system_settings_screensaver_timeout_enforce" and .status == "fail" and (.detail | contains("300s")))' \
+        <<<"$output" >/dev/null || fail "audit and remediation should use the same timeout parameter"
+}
+
 test_failed_safe_remediation_restores_previous_settings() {
     local root output status snapshot
     root="$(setup_env)"
@@ -253,6 +273,7 @@ test_non_macos_is_not_applicable
 test_other_macos_major_is_not_applicable
 test_explain_maps_rule_to_nist_controls
 test_safe_remediation_requires_preview_or_confirmation
+test_timeout_policy_has_one_versioned_source
 test_failed_safe_remediation_restores_previous_settings
 test_safe_remediation_is_verified_and_reversible
 echo "[PASS] compliance tests completed"

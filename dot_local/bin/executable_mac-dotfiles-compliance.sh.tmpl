@@ -14,6 +14,8 @@ FIREWALL_CMD="${MAC_DOTFILES_FIREWALL_CMD:-/usr/libexec/ApplicationFirewall/sock
 DEFAULTS_CMD="${MAC_DOTFILES_DEFAULTS_CMD:-defaults}"
 SYSADMINCTL_CMD="${MAC_DOTFILES_SYSADMINCTL_CMD:-sysadminctl}"
 SUDO_CMD="${MAC_DOTFILES_SUDO_CMD:-sudo}"
+SAFE_TIMEOUT_RULE="system_settings_screensaver_timeout_enforce"
+SAFE_GUEST_RULE="system_settings_guest_account_disable"
 RESULTS_FILE=""
 WORK_DIR=""
 CHECK_DETAIL=""
@@ -72,6 +74,7 @@ validate_catalog() {
       .id == "personal-nist-low" and
       .mode == "audit-only" and
       .target.os == "macOS" and
+      (.tailoring.parameters.screensaver_timeout_seconds | type == "number" and . > 0 and floor == .) and
       (.upstream.commit | test("^[0-9a-f]{40}$")) and
       (.rules | length >= 10) and
       ([.rules[].id] | length == (unique | length)) and
@@ -213,18 +216,46 @@ read_default() {
     "$DEFAULTS_CMD" "$@" 2>/dev/null
 }
 
+baseline_timeout_seconds() {
+    jq -r '.tailoring.parameters.screensaver_timeout_seconds' "$BASELINE"
+}
+
+read_guest_account_state() {
+    local output value
+    if command_available "$SYSADMINCTL_CMD"; then
+        output="$($SYSADMINCTL_CMD -guestAccount status 2>&1)" || return 1
+        if grep -Fqi disabled <<<"$output"; then
+            echo disabled
+            return 0
+        fi
+        if grep -Fqi enabled <<<"$output"; then
+            echo enabled
+            return 0
+        fi
+        return 1
+    fi
+    command_available "$DEFAULTS_CMD" || return 1
+    value="$(read_default read /Library/Preferences/com.apple.loginwindow GuestEnabled || true)"
+    case "$value" in
+        "" | 0) echo disabled ;;
+        1) echo enabled ;;
+        *) return 1 ;;
+    esac
+}
+
 check_screensaver_timeout() {
-    local value
-    command_available defaults || {
+    local value timeout_limit
+    command_available "$DEFAULTS_CMD" || {
         CHECK_DETAIL="defaults is unavailable"
         return 3
     }
+    timeout_limit="$(baseline_timeout_seconds)"
     value="$(read_default -currentHost read com.apple.screensaver idleTime || true)"
-    if [[ "$value" =~ ^[0-9]+$ ]] && [[ "$value" -gt 0 && "$value" -le 900 ]]; then
-        CHECK_DETAIL="inactivity timeout is ${value}s (maximum 900s)"
+    if [[ "$value" =~ ^[0-9]+$ ]] && [[ "$value" -gt 0 && "$value" -le "$timeout_limit" ]]; then
+        CHECK_DETAIL="inactivity timeout is ${value}s (maximum ${timeout_limit}s)"
         return 0
     fi
-    CHECK_DETAIL="inactivity timeout is unset, disabled, or greater than 900s"
+    CHECK_DETAIL="inactivity timeout is unset, disabled, or greater than ${timeout_limit}s"
     return 1
 }
 
@@ -274,34 +305,25 @@ check_automatic_login() {
 }
 
 check_guest_account() {
-    local output value
-    if command_available "$SYSADMINCTL_CMD"; then
-        output="$($SYSADMINCTL_CMD -guestAccount status 2>&1)" || {
-            CHECK_DETAIL="unable to read guest account status"
-            return 3
-        }
-        if grep -Fqi "disabled" <<<"$output"; then
-            CHECK_DETAIL="guest account is disabled"
-            return 0
-        fi
-        if grep -Fqi "enabled" <<<"$output"; then
-            CHECK_DETAIL="guest account is enabled"
-            return 1
-        fi
-        CHECK_DETAIL="guest account status is unknown"
-        return 3
-    fi
-    command_available "$DEFAULTS_CMD" || {
-        CHECK_DETAIL="guest account inspection tools are unavailable"
+    local state
+    state="$(read_guest_account_state)" || {
+        CHECK_DETAIL="unable to determine guest account status"
         return 3
     }
-    value="$(read_default read /Library/Preferences/com.apple.loginwindow GuestEnabled || true)"
-    if [[ -z "$value" || "$value" == "0" ]]; then
-        CHECK_DETAIL="guest account is disabled"
-        return 0
-    fi
-    CHECK_DETAIL="guest account is enabled"
-    return 1
+    case "$state" in
+        disabled)
+            CHECK_DETAIL="guest account is disabled"
+            return 0
+            ;;
+        enabled)
+            CHECK_DETAIL="guest account is enabled"
+            return 1
+            ;;
+        *)
+            CHECK_DETAIL="guest account status is unknown"
+            return 3
+            ;;
+    esac
 }
 
 check_service_absent() {
@@ -501,34 +523,12 @@ run_privileged() {
     fi
 }
 
-guest_account_state() {
-    local output value
-    if command_available "$SYSADMINCTL_CMD"; then
-        output="$($SYSADMINCTL_CMD -guestAccount status 2>&1)" || return 1
-        if grep -Fqi disabled <<<"$output"; then
-            echo disabled
-            return 0
-        fi
-        if grep -Fqi enabled <<<"$output"; then
-            echo enabled
-            return 0
-        fi
-        return 1
-    fi
-    value="$(read_default read /Library/Preferences/com.apple.loginwindow GuestEnabled || true)"
-    case "$value" in
-        "" | 0) echo disabled ;;
-        1) echo enabled ;;
-        *) return 1 ;;
-    esac
-}
-
 render_remediation_preview() {
-    local timeout_action="$1" guest_action="$2"
+    local timeout_action="$1" guest_action="$2" timeout_limit="$3"
     echo "Safe NIST remediation preview"
     echo "============================="
     if [[ "$timeout_action" == "apply" ]]; then
-        echo "  CHANGE  Set the inactivity timeout to 900 seconds"
+        echo "  CHANGE  Set the inactivity timeout to $timeout_limit seconds"
     else
         echo "  OK      Inactivity timeout already meets the baseline"
     fi
@@ -562,7 +562,7 @@ restore_snapshot() {
 
 run_remediation() {
     local safe=0 dry_run=0 assume_yes=0 arg idle_raw idle_exists=false idle_value=null guest_state
-    local timeout_action=skip guest_action=skip run_id run_dir snapshot timestamp apply_status=0 audit_status=0
+    local timeout_action=skip guest_action=skip timeout_limit run_id run_dir snapshot timestamp apply_status=0 audit_status=0
     for arg in "$@"; do
         case "$arg" in
             --safe) safe=1 ;;
@@ -577,15 +577,17 @@ run_remediation() {
     command_available "$DEFAULTS_CMD" || die "defaults is required" 2
     command_available "$SYSADMINCTL_CMD" || die "sysadminctl is required" 2
 
+    validate_catalog >/dev/null
+    timeout_limit="$(baseline_timeout_seconds)"
     idle_raw="$(read_default -currentHost read com.apple.screensaver idleTime || true)"
     if [[ "$idle_raw" =~ ^[0-9]+$ ]]; then
         idle_exists=true
         idle_value="$idle_raw"
     fi
-    if [[ ! "$idle_raw" =~ ^[0-9]+$ || "$idle_raw" -eq 0 || "$idle_raw" -gt 900 ]]; then timeout_action=apply; fi
-    guest_state="$(guest_account_state)" || die "Unable to determine the guest account state; no changes made" 2
+    if [[ ! "$idle_raw" =~ ^[0-9]+$ || "$idle_raw" -eq 0 || "$idle_raw" -gt "$timeout_limit" ]]; then timeout_action=apply; fi
+    guest_state="$(read_guest_account_state)" || die "Unable to determine the guest account state; no changes made" 2
     [[ "$guest_state" == enabled ]] && guest_action=apply
-    render_remediation_preview "$timeout_action" "$guest_action"
+    render_remediation_preview "$timeout_action" "$guest_action" "$timeout_limit"
     if [[ "$timeout_action" == skip && "$guest_action" == skip ]]; then
         echo "Nothing to remediate."
         return 0
@@ -600,20 +602,22 @@ run_remediation() {
     mkdir -p "$run_dir"
     chmod 700 "$COMPLIANCE_DIR" "$REMEDIATIONS_DIR" "$run_dir"
     jq -n --arg id "$run_id" --arg timestamp "$timestamp" --argjson idle_exists "$idle_exists" \
-        --argjson idle_value "$idle_value" --arg guest_state "$guest_state" \
-        '{schema_version:1,kind:"mac-dotfiles-compliance-remediation",id:$id,status:"applying",created_at:$timestamp,before:{screensaver_idle_time:{exists:$idle_exists,value:$idle_value},guest_account:$guest_state},actions:["system_settings_screensaver_timeout_enforce","system_settings_guest_account_disable"]}' \
+        --argjson idle_value "$idle_value" --argjson timeout_limit "$timeout_limit" --arg guest_state "$guest_state" \
+        --arg timeout_rule "$SAFE_TIMEOUT_RULE" --arg guest_rule "$SAFE_GUEST_RULE" \
+        '{schema_version:1,kind:"mac-dotfiles-compliance-remediation",id:$id,status:"applying",created_at:$timestamp,target:{screensaver_idle_time:$timeout_limit},before:{screensaver_idle_time:{exists:$idle_exists,value:$idle_value},guest_account:$guest_state},actions:[$timeout_rule,$guest_rule]}' \
         >"$snapshot"
     chmod 600 "$snapshot"
 
     if [[ "$timeout_action" == apply ]]; then
-        "$DEFAULTS_CMD" -currentHost write com.apple.screensaver idleTime -int 900 || apply_status=1
+        "$DEFAULTS_CMD" -currentHost write com.apple.screensaver idleTime -int "$timeout_limit" || apply_status=1
     fi
     if [[ "$apply_status" -eq 0 && "$guest_action" == apply ]]; then
         run_privileged "$SYSADMINCTL_CMD" -guestAccount off || apply_status=1
     fi
     if [[ "$apply_status" -eq 0 ]]; then
         run_audit --json >/dev/null || audit_status=$?
-        jq -e '[.results[] | select((.id == "system_settings_screensaver_timeout_enforce" or .id == "system_settings_guest_account_disable") and .status != "pass")] | length == 0' \
+        jq -e --arg timeout_rule "$SAFE_TIMEOUT_RULE" --arg guest_rule "$SAFE_GUEST_RULE" \
+            '[.results[] | select((.id == $timeout_rule or .id == $guest_rule) and .status != "pass")] | length == 0' \
             "$LATEST_FILE" >/dev/null || apply_status=1
         [[ "$audit_status" -ne 2 ]] || apply_status=1
     fi
