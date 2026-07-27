@@ -39,14 +39,37 @@ MOCK
 case "$*" in
   "read /Library/Preferences/com.apple.SoftwareUpdate CriticalUpdateInstall") echo 1 ;;
   "-currentHost read com.apple.screensaver idleTime")
-    if [[ -f "$TEST_ROOT/noncompliant" ]]; then exit 1; else echo 600; fi
+    if [[ -f "$TEST_ROOT/remediated-timeout" ]]; then echo 900
+    elif [[ -f "$TEST_ROOT/noncompliant" ]]; then exit 1
+    else echo 600
+    fi
     ;;
+  "-currentHost write com.apple.screensaver idleTime -int 900") touch "$TEST_ROOT/remediated-timeout" ;;
+  "-currentHost delete com.apple.screensaver idleTime") rm -f "$TEST_ROOT/remediated-timeout" ;;
   "read com.apple.screensaver askForPassword") echo 1 ;;
   "read com.apple.screensaver askForPasswordDelay") echo 0 ;;
   "read /Library/Preferences/com.apple.loginwindow autoLoginUser") exit 1 ;;
   "read /Library/Preferences/com.apple.loginwindow GuestEnabled")
     if [[ -f "$TEST_ROOT/noncompliant" ]]; then echo 1; else echo 0; fi
     ;;
+  *) exit 1 ;;
+esac
+MOCK
+    cat >"$root/bin/sysadminctl" <<'MOCK'
+#!/usr/bin/env bash
+case "$*" in
+  "-guestAccount status")
+    if [[ -f "$TEST_ROOT/remediated-guest" || ! -f "$TEST_ROOT/noncompliant" ]]; then
+      echo "Guest account disabled."
+    else
+      echo "Guest account enabled."
+    fi
+    ;;
+  "-guestAccount off")
+    [[ ! -f "$TEST_ROOT/fail-guest-off" ]] || exit 1
+    touch "$TEST_ROOT/remediated-guest"
+    ;;
+  "-guestAccount on") rm -f "$TEST_ROOT/remediated-guest" ;;
   *) exit 1 ;;
 esac
 MOCK
@@ -81,6 +104,8 @@ run_compliance() {
     HOME="$root/home" TEST_ROOT="$root" CHEZMOI_SOURCE_DIR="$REPO_ROOT" \
         MAC_DOTFILES_STATE_DIR="$root/state" MAC_DOTFILES_PLATFORM=Darwin \
         MAC_DOTFILES_FIREWALL_CMD="$root/bin/firewall" \
+        MAC_DOTFILES_SYSADMINCTL_CMD="$root/bin/sysadminctl" MAC_DOTFILES_DEFAULTS_CMD="$root/bin/defaults" \
+        MAC_DOTFILES_NO_SUDO=1 \
         MAC_DOTFILES_PATH="$root/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
         bash "$COMPLIANCE_SCRIPT" "$@"
 }
@@ -155,10 +180,79 @@ test_explain_maps_rule_to_nist_controls() {
         fail "rule explanation should expose upstream and remediation metadata"
 }
 
+test_safe_remediation_requires_preview_or_confirmation() {
+    local root output status
+    root="$(setup_env)"
+    touch "$root/noncompliant"
+
+    output="$(run_compliance "$root" remediate --safe --dry-run)"
+    [[ "$output" == *"Set the inactivity timeout to 900 seconds"* && "$output" == *"Disable the macOS guest account"* ]] ||
+        fail "safe dry-run should preview both curated changes"
+    [[ ! -e "$root/remediated-timeout" && ! -e "$root/remediated-guest" ]] ||
+        fail "dry-run must not change settings"
+    [[ ! -d "$root/state/compliance/remediations" ]] || fail "dry-run must not create a rollback snapshot"
+
+    set +e
+    output="$(run_compliance "$root" remediate --safe 2>&1)"
+    status=$?
+    set -e
+    [[ "$status" -eq 2 && "$output" == *"Re-run with --yes"* ]] ||
+        fail "non-interactive remediation should require explicit confirmation"
+}
+
+test_failed_safe_remediation_restores_previous_settings() {
+    local root output status snapshot
+    root="$(setup_env)"
+    touch "$root/noncompliant" "$root/fail-guest-off"
+
+    set +e
+    output="$(run_compliance "$root" remediate --safe --yes 2>&1)"
+    status=$?
+    set -e
+    [[ "$status" -eq 1 && "$output" == *"previous settings were restored"* ]] ||
+        fail "a partial remediation should report its automatic rollback"
+    [[ ! -e "$root/remediated-timeout" && ! -e "$root/remediated-guest" ]] ||
+        fail "a partial remediation must restore all previous settings"
+    snapshot="$(find "$root/state/compliance/remediations" -name state.json -type f | head -1)"
+    jq -e '.status == "rolled_back_after_failure"' "$snapshot" >/dev/null ||
+        fail "failed remediation evidence should record its rollback"
+}
+
+test_safe_remediation_is_verified_and_reversible() {
+    local root output snapshot
+    root="$(setup_env)"
+    touch "$root/noncompliant"
+
+    output="$(run_compliance "$root" remediate --safe --yes)"
+    [[ "$output" == *"Safe remediation applied and verified"* ]] || fail "safe remediation should report success"
+    [[ -e "$root/remediated-timeout" && -e "$root/remediated-guest" ]] ||
+        fail "safe remediation should apply both curated settings"
+    snapshot="$(find "$root/state/compliance/remediations" -name state.json -type f | head -1)"
+    [[ -f "$snapshot" ]] || fail "safe remediation should save rollback evidence"
+    jq -e '.status == "success" and .before.screensaver_idle_time.exists == false and .before.guest_account == "enabled"' \
+        "$snapshot" >/dev/null || fail "rollback evidence should preserve previous values"
+    jq -e '[.results[] | select((.id == "system_settings_screensaver_timeout_enforce" or .id == "system_settings_guest_account_disable") and .status == "pass")] | length == 2' \
+        "$root/state/compliance/latest.json" >/dev/null || fail "safe remediation should re-audit selected controls"
+
+    output="$(run_compliance "$root" rollback latest --dry-run)"
+    [[ "$output" == *"Inactivity timeout: unset"* && "$output" == *"Guest account: enabled"* ]] ||
+        fail "rollback dry-run should preview the saved values"
+    [[ -e "$root/remediated-timeout" && -e "$root/remediated-guest" ]] || fail "rollback dry-run must not change settings"
+
+    output="$(run_compliance "$root" rollback latest --yes)"
+    [[ "$output" == *"Previous compliance settings restored"* ]] || fail "confirmed rollback should report success"
+    [[ ! -e "$root/remediated-timeout" && ! -e "$root/remediated-guest" ]] ||
+        fail "rollback should restore the original settings"
+    jq -e '.status == "rolled_back"' "$snapshot" >/dev/null || fail "rollback should update snapshot status"
+}
+
 test_catalog_is_versioned_and_unique
 test_passing_audit_persists_evidence
 test_noncompliance_is_advisory_and_actionable
 test_non_macos_is_not_applicable
 test_other_macos_major_is_not_applicable
 test_explain_maps_rule_to_nist_controls
+test_safe_remediation_requires_preview_or_confirmation
+test_failed_safe_remediation_restores_previous_settings
+test_safe_remediation_is_verified_and_reversible
 echo "[PASS] compliance tests completed"

@@ -219,12 +219,17 @@ mac-dotfiles.sh compliance audit
 mac-dotfiles.sh compliance audit --json
 mac-dotfiles.sh compliance plan
 mac-dotfiles.sh compliance status
+mac-dotfiles.sh compliance remediate --safe --dry-run
+mac-dotfiles.sh compliance remediate --safe
+mac-dotfiles.sh compliance rollback latest --dry-run
 mac-dotfiles.sh compliance explain os_sip_enable
 ```
 
 Evidence is stored under `~/.local/state/mac-dotfiles/compliance/`, included in the machine report, refreshed by scheduled maintenance, and monitored by the watchdog. Findings are advisory warnings and do not fail maintenance or certified updates; evaluator errors are reported as critical watchdog health issues.
 
-This feature does **not** claim that the Mac or repository is NIST-certified. NIST itself describes the upstream material as a catalog that must be tailored to the operational environment. This baseline never enables FileVault, changes recovery keys, enables the firewall, disables remote services, or applies enterprise password/MDM policies automatically.
+The optional safe remediation set only configures a screen-lock timeout of at most 15 minutes and disables the local guest account. It always displays a preview, requires interactive confirmation (or an explicit `--yes` for automation), saves the previous values, verifies both controls with a fresh audit, and restores the snapshot automatically if validation fails. `compliance rollback ID --yes` can restore a successful run later. Use `--dry-run` to inspect either operation without changing the Mac.
+
+This feature does **not** claim that the Mac or repository is NIST-certified. NIST itself describes the upstream material as a catalog that must be tailored to the operational environment. The safe remediation set never enables FileVault, changes recovery keys, enables the firewall, disables remote services, or applies enterprise password/MDM policies automatically.
 
 ### Automated Maintenance
 Daily automatic tasks (via macOS LaunchAgent):
@@ -292,6 +297,7 @@ The launcher provides a compact numbered menu for common actions:
 - inspect or run the proactive health watchdog
 - fetch, certify, and transactionally apply a candidate update
 - audit and explain the tailored NIST baseline
+- preview, apply, and roll back the two curated safe NIST remediations
 
 You can also call commands directly:
 ```bash
@@ -301,6 +307,8 @@ mac-dotfiles.sh safe-update
 mac-dotfiles.sh certified-update run
 mac-dotfiles.sh compliance audit
 mac-dotfiles.sh compliance plan
+mac-dotfiles.sh compliance remediate --safe --dry-run
+mac-dotfiles.sh compliance rollback latest --dry-run
 mac-dotfiles.sh rollback latest --dry-run
 mac-dotfiles.sh history
 mac-dotfiles.sh report
@@ -457,7 +465,7 @@ brew bundle --global --verbose
 - `dot_local/bin/executable_mac-dotfiles-migrate.sh.tmpl` - Versioned schema migration planner and runner
 - `dot_local/bin/executable_mac-dotfiles-certify.sh.tmpl` - Versioned repository and live-machine certification attestation
 - `dot_local/bin/executable_mac-dotfiles-certified-update.sh.tmpl` - Pre-apply candidate certification, transactional convergence, and last-known-good source rollback
-- `dot_local/bin/executable_mac-dotfiles-compliance.sh.tmpl` - Audit-only tailored NIST rule evaluation and evidence
+- `dot_local/bin/executable_mac-dotfiles-compliance.sh.tmpl` - Tailored NIST audit evidence plus explicit, reversible safe remediation
 - `dot_local/bin/executable_mac-dotfiles-recovery.sh.tmpl` - Portable, optionally encrypted disaster-recovery snapshots and transactional restore
 - `dot_local/bin/executable_mac-dotfiles-watchdog.sh.tmpl` - Proactive health state, cooldown, and native macOS notifications
 - `run_onchange_configure-dock-darwin.sh.tmpl` - Dock configuration reapplied when its desired values change
