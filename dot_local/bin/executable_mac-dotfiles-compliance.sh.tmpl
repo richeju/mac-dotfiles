@@ -9,7 +9,11 @@ STATE_DIR="${MAC_DOTFILES_STATE_DIR:-$HOME/.local/state/mac-dotfiles}"
 BASELINE="${MAC_DOTFILES_COMPLIANCE_BASELINE:-$SOURCE_DIR/compliance/personal-nist-low.json}"
 COMPLIANCE_DIR="$STATE_DIR/compliance"
 LATEST_FILE="$COMPLIANCE_DIR/latest.json"
+REMEDIATIONS_DIR="$COMPLIANCE_DIR/remediations"
 FIREWALL_CMD="${MAC_DOTFILES_FIREWALL_CMD:-/usr/libexec/ApplicationFirewall/socketfilterfw}"
+DEFAULTS_CMD="${MAC_DOTFILES_DEFAULTS_CMD:-defaults}"
+SYSADMINCTL_CMD="${MAC_DOTFILES_SYSADMINCTL_CMD:-sysadminctl}"
+SUDO_CMD="${MAC_DOTFILES_SUDO_CMD:-sudo}"
 RESULTS_FILE=""
 WORK_DIR=""
 CHECK_DETAIL=""
@@ -23,10 +27,15 @@ Commands:
   audit [--json]          Evaluate the tailored NIST baseline and save evidence.
   plan [--json]           Audit and show non-compliant or unavailable controls.
   status [--json]         Show the latest saved compliance state.
+  remediate --safe [--dry-run|--yes]
+                          Preview or apply the safe opt-in remediations.
+  rollback [ID|latest] [--dry-run|--yes]
+                          Restore settings saved by a remediation.
   explain RULE_ID         Explain one rule, its mappings, and remediation mode.
   validate-catalog        Validate baseline structure and uniqueness.
 
-This first compliance pass is audit-only. It never changes security settings.
+Audits never change settings. Remediation is limited to explicitly selected,
+reversible controls and requires confirmation or --yes.
 USAGE
 }
 
@@ -201,7 +210,7 @@ check_software_current() {
 }
 
 read_default() {
-    defaults "$@" 2>/dev/null
+    "$DEFAULTS_CMD" "$@" 2>/dev/null
 }
 
 check_screensaver_timeout() {
@@ -265,9 +274,25 @@ check_automatic_login() {
 }
 
 check_guest_account() {
-    local value
-    command_available defaults || {
-        CHECK_DETAIL="defaults is unavailable"
+    local output value
+    if command_available "$SYSADMINCTL_CMD"; then
+        output="$($SYSADMINCTL_CMD -guestAccount status 2>&1)" || {
+            CHECK_DETAIL="unable to read guest account status"
+            return 3
+        }
+        if grep -Fqi "disabled" <<<"$output"; then
+            CHECK_DETAIL="guest account is disabled"
+            return 0
+        fi
+        if grep -Fqi "enabled" <<<"$output"; then
+            CHECK_DETAIL="guest account is enabled"
+            return 1
+        fi
+        CHECK_DETAIL="guest account status is unknown"
+        return 3
+    fi
+    command_available "$DEFAULTS_CMD" || {
+        CHECK_DETAIL="guest account inspection tools are unavailable"
         return 3
     }
     value="$(read_default read /Library/Preferences/com.apple.loginwindow GuestEnabled || true)"
@@ -459,12 +484,210 @@ explain_rule() {
     jq -r '"\(.title)\n\(.id) / \(.cce)\nNIST SP 800-53 Rev. 5: \(.controls | join(", "))\nCategory: \(.category)\nImpact: \(.impact)\nRemediation: \(.remediation)\n\n\(.guidance)"' <<<"$rule"
 }
 
+confirm_action() {
+    local prompt="$1" assume_yes="$2" answer
+    [[ "$assume_yes" -eq 0 ]] || return 0
+    [[ -t 0 ]] || die "$prompt Re-run with --yes to confirm non-interactively." 2
+    printf '%s [y/N] ' "$prompt"
+    read -r answer
+    [[ "$answer" == "y" || "$answer" == "Y" || "$answer" == "yes" || "$answer" == "YES" ]]
+}
+
+run_privileged() {
+    if [[ "${MAC_DOTFILES_NO_SUDO:-0}" == "1" || "$EUID" -eq 0 ]]; then
+        "$@"
+    else
+        "$SUDO_CMD" "$@"
+    fi
+}
+
+guest_account_state() {
+    local output value
+    if command_available "$SYSADMINCTL_CMD"; then
+        output="$($SYSADMINCTL_CMD -guestAccount status 2>&1)" || return 1
+        if grep -Fqi disabled <<<"$output"; then
+            echo disabled
+            return 0
+        fi
+        if grep -Fqi enabled <<<"$output"; then
+            echo enabled
+            return 0
+        fi
+        return 1
+    fi
+    value="$(read_default read /Library/Preferences/com.apple.loginwindow GuestEnabled || true)"
+    case "$value" in
+        "" | 0) echo disabled ;;
+        1) echo enabled ;;
+        *) return 1 ;;
+    esac
+}
+
+render_remediation_preview() {
+    local timeout_action="$1" guest_action="$2"
+    echo "Safe NIST remediation preview"
+    echo "============================="
+    if [[ "$timeout_action" == "apply" ]]; then
+        echo "  CHANGE  Set the inactivity timeout to 900 seconds"
+    else
+        echo "  OK      Inactivity timeout already meets the baseline"
+    fi
+    if [[ "$guest_action" == "apply" ]]; then
+        echo "  CHANGE  Disable the macOS guest account (administrator approval required)"
+    else
+        echo "  OK      Guest account is already disabled"
+    fi
+    echo
+    echo "The previous values will be saved for rollback. Firewall and FileVault are not changed."
+}
+
+restore_snapshot() {
+    local snapshot="$1" idle_exists idle_value guest_state restore_status=0
+    idle_exists="$(jq -r '.before.screensaver_idle_time.exists' "$snapshot")"
+    idle_value="$(jq -r '.before.screensaver_idle_time.value // empty' "$snapshot")"
+    guest_state="$(jq -r '.before.guest_account' "$snapshot")"
+
+    if [[ "$idle_exists" == "true" ]]; then
+        "$DEFAULTS_CMD" -currentHost write com.apple.screensaver idleTime -int "$idle_value" || restore_status=1
+    else
+        "$DEFAULTS_CMD" -currentHost delete com.apple.screensaver idleTime >/dev/null 2>&1 || true
+    fi
+    case "$guest_state" in
+        enabled) run_privileged "$SYSADMINCTL_CMD" -guestAccount on || restore_status=1 ;;
+        disabled) run_privileged "$SYSADMINCTL_CMD" -guestAccount off || restore_status=1 ;;
+        *) restore_status=1 ;;
+    esac
+    return "$restore_status"
+}
+
+run_remediation() {
+    local safe=0 dry_run=0 assume_yes=0 arg idle_raw idle_exists=false idle_value=null guest_state
+    local timeout_action=skip guest_action=skip run_id run_dir snapshot timestamp apply_status=0 audit_status=0
+    for arg in "$@"; do
+        case "$arg" in
+            --safe) safe=1 ;;
+            --dry-run) dry_run=1 ;;
+            --yes) assume_yes=1 ;;
+            *) die "Unknown remediation option: $arg" 2 ;;
+        esac
+    done
+    [[ "$safe" -eq 1 ]] || die "Only the curated safe set is available; use: compliance remediate --safe" 2
+    [[ "$dry_run" -eq 0 || "$assume_yes" -eq 0 ]] || die "--dry-run and --yes cannot be combined" 2
+    is_target_platform || die "Safe remediation is only supported on the baseline target, macOS 26" 2
+    command_available "$DEFAULTS_CMD" || die "defaults is required" 2
+    command_available "$SYSADMINCTL_CMD" || die "sysadminctl is required" 2
+
+    idle_raw="$(read_default -currentHost read com.apple.screensaver idleTime || true)"
+    if [[ "$idle_raw" =~ ^[0-9]+$ ]]; then
+        idle_exists=true
+        idle_value="$idle_raw"
+    fi
+    if [[ ! "$idle_raw" =~ ^[0-9]+$ || "$idle_raw" -eq 0 || "$idle_raw" -gt 900 ]]; then timeout_action=apply; fi
+    guest_state="$(guest_account_state)" || die "Unable to determine the guest account state; no changes made" 2
+    [[ "$guest_state" == enabled ]] && guest_action=apply
+    render_remediation_preview "$timeout_action" "$guest_action"
+    if [[ "$timeout_action" == skip && "$guest_action" == skip ]]; then
+        echo "Nothing to remediate."
+        return 0
+    fi
+    [[ "$dry_run" -eq 0 ]] || return 0
+    confirm_action "Apply these safe remediations?" "$assume_yes" || die "Remediation cancelled; no changes made" 1
+
+    timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    run_id="${timestamp//[:]/-}-$$"
+    run_dir="$REMEDIATIONS_DIR/$run_id"
+    snapshot="$run_dir/state.json"
+    mkdir -p "$run_dir"
+    chmod 700 "$COMPLIANCE_DIR" "$REMEDIATIONS_DIR" "$run_dir"
+    jq -n --arg id "$run_id" --arg timestamp "$timestamp" --argjson idle_exists "$idle_exists" \
+        --argjson idle_value "$idle_value" --arg guest_state "$guest_state" \
+        '{schema_version:1,kind:"mac-dotfiles-compliance-remediation",id:$id,status:"applying",created_at:$timestamp,before:{screensaver_idle_time:{exists:$idle_exists,value:$idle_value},guest_account:$guest_state},actions:["system_settings_screensaver_timeout_enforce","system_settings_guest_account_disable"]}' \
+        >"$snapshot"
+    chmod 600 "$snapshot"
+
+    if [[ "$timeout_action" == apply ]]; then
+        "$DEFAULTS_CMD" -currentHost write com.apple.screensaver idleTime -int 900 || apply_status=1
+    fi
+    if [[ "$apply_status" -eq 0 && "$guest_action" == apply ]]; then
+        run_privileged "$SYSADMINCTL_CMD" -guestAccount off || apply_status=1
+    fi
+    if [[ "$apply_status" -eq 0 ]]; then
+        run_audit --json >/dev/null || audit_status=$?
+        jq -e '[.results[] | select((.id == "system_settings_screensaver_timeout_enforce" or .id == "system_settings_guest_account_disable") and .status != "pass")] | length == 0' \
+            "$LATEST_FILE" >/dev/null || apply_status=1
+        [[ "$audit_status" -ne 2 ]] || apply_status=1
+    fi
+    if [[ "$apply_status" -ne 0 ]]; then
+        if restore_snapshot "$snapshot"; then
+            jq '.status="rolled_back_after_failure" | .completed_at=(now | todateiso8601)' "$snapshot" >"$snapshot.tmp"
+            mv "$snapshot.tmp" "$snapshot"
+            chmod 600 "$snapshot"
+            die "Safe remediation failed validation and the previous settings were restored"
+        fi
+        jq '.status="rollback_failed" | .completed_at=(now | todateiso8601)' "$snapshot" >"$snapshot.tmp"
+        mv "$snapshot.tmp" "$snapshot"
+        chmod 600 "$snapshot"
+        die "Safe remediation failed and automatic rollback also failed; inspect: $snapshot" 2
+    fi
+    jq '.status="success" | .completed_at=(now | todateiso8601)' "$snapshot" >"$snapshot.tmp"
+    mv "$snapshot.tmp" "$snapshot"
+    chmod 600 "$snapshot"
+    echo "✓ Safe remediation applied and verified"
+    echo "Rollback ID: $run_id"
+}
+
+run_remediation_rollback() {
+    local id=latest dry_run=0 assume_yes=0 arg snapshot run_dir
+    for arg in "$@"; do
+        case "$arg" in
+            --dry-run) dry_run=1 ;;
+            --yes) assume_yes=1 ;;
+            latest) id=latest ;;
+            --*) die "Unknown rollback option: $arg" 2 ;;
+            *)
+                [[ "$id" == latest ]] || die "Only one rollback ID may be specified" 2
+                id="$arg"
+                ;;
+        esac
+    done
+    [[ "$dry_run" -eq 0 || "$assume_yes" -eq 0 ]] || die "--dry-run and --yes cannot be combined" 2
+    if [[ "$id" == latest ]]; then
+        run_dir="$(find "$REMEDIATIONS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r | while IFS= read -r candidate; do
+            if jq -e '.status == "success"' "$candidate/state.json" >/dev/null 2>&1; then
+                echo "$candidate"
+                break
+            fi
+        done)"
+        [[ -n "$run_dir" ]] || die "No successful remediation snapshot found" 2
+    else
+        [[ "$id" != */* && "$id" != *..* ]] || die "Invalid rollback ID" 2
+        run_dir="$REMEDIATIONS_DIR/$id"
+    fi
+    snapshot="$run_dir/state.json"
+    [[ -f "$snapshot" ]] || die "Remediation snapshot not found: $id" 2
+    jq -e '.schema_version == 1 and .kind == "mac-dotfiles-compliance-remediation" and .status == "success" and (.before.screensaver_idle_time.exists | type == "boolean") and (if .before.screensaver_idle_time.exists then (.before.screensaver_idle_time.value | type == "number" and . >= 0) else .before.screensaver_idle_time.value == null end) and (.before.guest_account == "enabled" or .before.guest_account == "disabled")' \
+        "$snapshot" >/dev/null || die "Remediation snapshot is invalid: $snapshot" 2
+    echo "Compliance rollback preview"
+    echo "==========================="
+    jq -r '"  RESTORE Inactivity timeout: " + (if .before.screensaver_idle_time.exists then (.before.screensaver_idle_time.value | tostring) + " seconds" else "unset" end), "  RESTORE Guest account: " + .before.guest_account' "$snapshot"
+    [[ "$dry_run" -eq 0 ]] || return 0
+    confirm_action "Restore these previous settings?" "$assume_yes" || die "Rollback cancelled; no changes made" 1
+    restore_snapshot "$snapshot" || die "Rollback failed; inspect: $snapshot" 2
+    jq '.status="rolled_back" | .rolled_back_at=(now | todateiso8601)' "$snapshot" >"$snapshot.tmp"
+    mv "$snapshot.tmp" "$snapshot"
+    chmod 600 "$snapshot"
+    run_audit --json >/dev/null || true
+    echo "✓ Previous compliance settings restored"
+}
+
 command="${1:-status}"
 shift || true
 case "$command" in
     audit) run_audit "$@" ;;
     plan) show_plan "$@" ;;
     status) show_status "$@" ;;
+    remediate) run_remediation "$@" ;;
+    rollback) run_remediation_rollback "$@" ;;
     explain) explain_rule "$@" ;;
     validate-catalog)
         [[ $# -eq 0 ]] || die "validate-catalog takes no arguments" 2

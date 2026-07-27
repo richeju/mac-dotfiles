@@ -95,7 +95,7 @@
       "category": "session",
       "cce": "CCE-95397-6",
       "controls": ["AC-11", "IA-11"],
-      "remediation": "manual",
+      "remediation": "safe-opt-in",
       "impact": "medium",
       "guidance": "Set the display/screen saver inactivity timeout to 900 seconds or less."
     },
@@ -135,7 +135,7 @@
       "category": "accounts",
       "cce": "CCE-95374-5",
       "controls": ["AC-2", "AC-2(9)"],
-      "remediation": "manual",
+      "remediation": "safe-opt-in",
       "impact": "medium",
       "guidance": "Disable Guest User unless anonymous local access is explicitly required."
     },
