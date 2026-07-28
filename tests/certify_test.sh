@@ -14,7 +14,7 @@ trap 'rm -f "$output"; rm -rf "$state_dir"' EXIT
 
 (
     cd "$state_dir"
-    CHEZMOI_SOURCE_DIR="$REPO_ROOT" MAC_DOTFILES_STATE_DIR="$state_dir" \
+    CHEZMOI_SOURCE_DIR="$REPO_ROOT" MAC_DOTFILES_STATE_DIR="$state_dir" MAC_DOTFILES_LOCK_HELD=1 \
         bash "$CERTIFIER" --json --skip-live --output "$output" >/dev/null
 )
 jq -e '.schema_version == 1 and .kind == "mac-dotfiles-certification" and .overall == "pass"' "$output" >/dev/null
