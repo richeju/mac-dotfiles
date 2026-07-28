@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# A certification can run inside a locked maintenance/update operation, but its
+# isolated checks must acquire or mock their own locks and state directories.
+unset MAC_DOTFILES_LOCK_HELD
+
 SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
 STATE_DIR="${MAC_DOTFILES_STATE_DIR:-$HOME/.local/state/mac-dotfiles}"
 ENGINE="$SOURCE_DIR/dot_local/bin/executable_mac-dotfiles-converge.sh.tmpl"
