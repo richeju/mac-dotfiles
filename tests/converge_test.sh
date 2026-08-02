@@ -126,6 +126,7 @@ test_profiles_are_declarative_and_persistent() {
     [[ "$(run_engine "$root" profile current)" == "developer" ]] || fail "profile set should persist"
     output="$(run_engine "$root" profile show developer)"
     assert_contains "$output" 'brew "go"' "developer profile should include Go"
+    assert_contains "$output" 'cask "balenaetcher"' "developer profile should inherit personal USB imaging tools"
     [[ "$output" != *'nvidia-geforce-now'* ]] || fail "developer profile should not include gaming casks"
 
     set +e

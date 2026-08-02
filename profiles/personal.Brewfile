@@ -1,3 +1,4 @@
+cask "balenaetcher"            # Flash bootable OS images to USB drives
 cask "bitwarden"              # Password manager
 cask "chatgpt"                # OpenAI ChatGPT desktop app
 cask "dropbox"                # Cloud storage
