@@ -84,6 +84,7 @@ Some macOS apps can still require manual approval or an administrator password d
 - **ZeroTier One**: Mesh VPN client for securely connecting devices across networks
 
 ### Additional CLI Tools (Brewfile)
+- **age**: Modern file encryption and decryption for secure recovery kits
 - **jq**: command-line JSON processor
 - **tree**: directory structure visualization
 - **htop**: interactive process viewer
