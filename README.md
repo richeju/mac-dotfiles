@@ -81,6 +81,7 @@ Some macOS apps can still require manual approval or an administrator password d
 - **Bitwarden**: Password manager
 - **Dropbox**: Cloud storage
 - **Raycast**: Productivity launcher
+- **ZeroTier One**: Mesh VPN client for securely connecting devices across networks
 
 ### Additional CLI Tools (Brewfile)
 - **jq**: command-line JSON processor

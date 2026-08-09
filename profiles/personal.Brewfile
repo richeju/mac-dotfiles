@@ -7,3 +7,4 @@ cask "signal"                 # Messaging app
 cask "shottr"                 # Screenshot and annotation tool
 cask "vlc"                    # Media player
 cask "whatsapp"               # Messaging app
+cask "zerotier-one"           # Mesh VPN client
