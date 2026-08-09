@@ -125,6 +125,7 @@ test_profiles_are_declarative_and_persistent() {
     run_engine "$root" profile set developer >/dev/null
     [[ "$(run_engine "$root" profile current)" == "developer" ]] || fail "profile set should persist"
     output="$(run_engine "$root" profile show developer)"
+    assert_contains "$output" 'brew "age"' "developer profile should inherit core recovery encryption tools"
     assert_contains "$output" 'brew "go"' "developer profile should include Go"
     assert_contains "$output" 'cask "balenaetcher"' "developer profile should inherit personal USB imaging tools"
     assert_contains "$output" 'cask "zerotier-one"' "developer profile should inherit personal mesh VPN tools"
