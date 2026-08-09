@@ -74,12 +74,14 @@ Some macOS apps can still require manual approval or an administrator password d
 - **Git**, **curl**, and **zsh**: macOS bootstrap tools
 
 ### Applications (via Brewfile)
+- **balenaEtcher**: Bootable USB and SD-card image writer
 - **VLC**: Media player
 - **NVIDIA GeForce NOW**: Cloud gaming platform
 - **Discord**: Gaming communication
 - **Bitwarden**: Password manager
 - **Dropbox**: Cloud storage
 - **Raycast**: Productivity launcher
+- **ZeroTier One**: Mesh VPN client for securely connecting devices across networks
 
 ### Additional CLI Tools (Brewfile)
 - **jq**: command-line JSON processor
