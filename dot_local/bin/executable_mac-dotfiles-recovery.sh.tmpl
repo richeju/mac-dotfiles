@@ -303,6 +303,9 @@ unpack_snapshot() {
     while IFS= read -r line; do
         [[ -n "$line" ]] || continue
         type="${line:0:1}"
+        case "$line" in
+            *" link to "*) die "Hardlink entry is not allowed in recovery archives" ;;
+        esac
         case "$type" in
             - | d) ;;
             *) die "Unsupported entry type in recovery archive: $type" ;;
