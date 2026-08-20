@@ -116,16 +116,12 @@ check_live_state() {
 
 run_check "test-suite" env -u CHEZMOI_SOURCE_DIR MAC_DOTFILES_CERTIFY_CHILD=1 bash "$SOURCE_DIR/tests/test_suite.sh"
 if command -v shellcheck >/dev/null 2>&1; then
-    run_check "shellcheck" shellcheck --source-path="$SOURCE_DIR" \
-        "$SOURCE_DIR/doctor.sh" "$SOURCE_DIR/install.sh" "$SOURCE_DIR"/lib/*.sh \
-        "$SOURCE_DIR"/tests/*.sh "$SOURCE_DIR"/dot_local/bin/*.sh.tmpl
+    run_check "shellcheck" bash "$SOURCE_DIR/tests/shell_quality.sh" shellcheck
 else
     record_check "shellcheck" "skip" "shellcheck is not installed"
 fi
 if command -v shfmt >/dev/null 2>&1; then
-    run_check "shfmt" shfmt -d -i 4 -ci \
-        "$SOURCE_DIR/doctor.sh" "$SOURCE_DIR/install.sh" "$SOURCE_DIR"/lib/*.sh \
-        "$SOURCE_DIR"/tests/*.sh "$SOURCE_DIR"/dot_local/bin/*.sh.tmpl
+    run_check "shfmt" bash "$SOURCE_DIR/tests/shell_quality.sh" shfmt
 else
     record_check "shfmt" "skip" "shfmt is not installed"
 fi

@@ -1,0 +1,33 @@
+# macOS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Local credentials and identities
+.env
+.env.*
+!.env.example
+.ssh/
+.gnupg/
+.aws/
+*.key
+*.pem
+*.p12
+*.crt
+*.cer
+
+# Recovery and local state artifacts
+*.tar.gz
+*.tar.gz.age
+*.tar.gz.enc
+*.age
+*.enc
+*.log
+.cache/
+
+# Editor and temporary files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/

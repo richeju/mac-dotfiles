@@ -107,7 +107,9 @@ Meaning:
   Homebrew is required to install and reconcile packages.
 
 Try:
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  curl -fsSLo /tmp/homebrew-install.sh https://raw.githubusercontent.com/Homebrew/install/cced90146ea6d3057c03a636b668fef177415eb3/install.sh
+  echo '12479a24be3f5307eecac7cde670fad7118640f031229e964f544b1367b52a41  /tmp/homebrew-install.sh' | shasum -a 256 -c -
+  /bin/bash /tmp/homebrew-install.sh
   curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash
 TEXT
             ;;

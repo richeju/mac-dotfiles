@@ -12,6 +12,9 @@ GIT_NAME="${GIT_NAME:-}"
 GIT_EMAIL="${GIT_EMAIL:-}"
 PROFILE="${MAC_DOTFILES_PROFILE:-full}"
 PROFILE_SET=0
+DOTFILES_REF="${MAC_DOTFILES_REF:-main}"
+HOMEBREW_INSTALL_COMMIT="cced90146ea6d3057c03a636b668fef177415eb3"
+HOMEBREW_INSTALL_SHA256="12479a24be3f5307eecac7cde670fad7118640f031229e964f544b1367b52a41"
 
 usage() {
     cat <<'USAGE'
@@ -24,6 +27,7 @@ Options:
   --git-name <name>      Git user name (required with --auto if GIT_NAME env not set)
   --git-email <email>    Git user email (required with --auto if GIT_EMAIL env not set)
   --profile <name>       Persistent profile: minimal, personal, developer, gaming, or full
+  --ref <ref>            Apply a reviewed branch, tag, or 40-character commit
   -h, --help             Show this help
 USAGE
 }
@@ -67,6 +71,14 @@ while [[ $# -gt 0 ]]; do
             PROFILE_SET=1
             shift 2
             ;;
+        --ref)
+            [[ $# -lt 2 ]] && {
+                echo "Missing value for --ref"
+                exit 1
+            }
+            DOTFILES_REF="$2"
+            shift 2
+            ;;
         -h | --help)
             usage
             exit 0
@@ -87,6 +99,11 @@ case "$PROFILE" in
         exit 1
         ;;
 esac
+
+if [[ ! "$DOTFILES_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ || "$DOTFILES_REF" == *..* ]]; then
+    echo "Unsafe dotfiles ref: $DOTFILES_REF" >&2
+    exit 1
+fi
 
 if [[ "${AUTO:-0}" == "1" ]]; then
     AUTO_MODE="true"
@@ -316,6 +333,29 @@ ensure_sudo_for_homebrew_install() {
     log_error "Failed to obtain sudo privileges. Please make sure you have administrator access."
 }
 
+install_homebrew() {
+    local installer actual_checksum status
+    installer="$(mktemp "${TMPDIR:-/tmp}/homebrew-install.XXXXXX")"
+    if ! curl -fsSL --output "$installer" \
+        "https://raw.githubusercontent.com/Homebrew/install/$HOMEBREW_INSTALL_COMMIT/install.sh"; then
+        rm -f "$installer"
+        log_error "Failed to download the pinned Homebrew installer"
+    fi
+    actual_checksum="$(shasum -a 256 "$installer" | awk '{print $1}')"
+    if [[ "$actual_checksum" != "$HOMEBREW_INSTALL_SHA256" ]]; then
+        rm -f "$installer"
+        log_error "Pinned Homebrew installer checksum verification failed"
+    fi
+    if /bin/bash "$installer"; then
+        rm -f "$installer"
+        return 0
+    else
+        status=$?
+        rm -f "$installer"
+        log_error "Homebrew installer failed with status $status"
+    fi
+}
+
 print_install_summary() {
     local warning_count=0
 
@@ -424,7 +464,7 @@ ensure_brew_in_path
 if ! command -v brew &>/dev/null; then
     log_info "Installing Homebrew..."
     ensure_sudo_for_homebrew_install
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    install_homebrew
 
     # Add Homebrew to PATH for Apple Silicon
     if [[ $(uname -m) == 'arm64' ]]; then
@@ -485,18 +525,55 @@ repair_missing_chezmoi_upstream() {
     git -C "$source_dir" branch --set-upstream-to="$default_remote" "$default_branch" >/dev/null
 }
 
+apply_reviewed_dotfiles_ref() {
+    local source_dir="$HOME/.local/share/chezmoi"
+    local original_branch original_commit target status=0 restore_status=0
+
+    git -C "$source_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
+        log_error "Chezmoi source is not a Git worktree"
+    if [[ -n "$(git -C "$source_dir" status --porcelain)" ]]; then
+        log_error "Chezmoi source has local changes; refusing to switch to reviewed ref $DOTFILES_REF"
+    fi
+    git -C "$source_dir" fetch origin main --tags --prune >/dev/null
+    target="$(git -C "$source_dir" rev-parse --verify "$DOTFILES_REF^{commit}" 2>/dev/null || true)"
+    if [[ -z "$target" ]]; then
+        target="$(git -C "$source_dir" rev-parse --verify "origin/$DOTFILES_REF^{commit}" 2>/dev/null || true)"
+    fi
+    [[ -n "$target" ]] || log_error "Unable to resolve reviewed dotfiles ref: $DOTFILES_REF"
+
+    original_branch="$(git -C "$source_dir" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+    original_commit="$(git -C "$source_dir" rev-parse HEAD)"
+    git -C "$source_dir" switch --detach "$target" >/dev/null
+    GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" \
+        chezmoi apply --force --no-tty </dev/null || status=$?
+
+    if [[ -n "$original_branch" ]]; then
+        git -C "$source_dir" switch "$original_branch" >/dev/null || restore_status=$?
+    else
+        git -C "$source_dir" switch --detach "$original_commit" >/dev/null || restore_status=$?
+    fi
+    [[ "$restore_status" -eq 0 ]] || log_error "Dotfiles applied, but the original source ref could not be restored"
+    [[ "$status" -eq 0 ]] || log_error "Applying reviewed dotfiles ref failed with status $status"
+}
+
 if [ -d "$HOME/.local/share/chezmoi" ]; then
     log_warning "Chezmoi already initialized"
     log_info "Syncing and applying existing dotfiles..."
     repair_missing_chezmoi_upstream
-    chezmoi update --apply --force --no-tty </dev/null
+    if [[ "$DOTFILES_REF" == "main" ]]; then
+        chezmoi update --apply --force --no-tty </dev/null
+    else
+        apply_reviewed_dotfiles_ref
+    fi
     DOTFILES_APPLIED="true"
 else
     log_info "Initializing chezmoi with your dotfiles..."
+    init_apply=(--apply)
+    [[ "$DOTFILES_REF" == "main" ]] || init_apply=()
     if [[ "$AUTO_MODE" == "true" ]]; then
         log_info "Running in auto mode (non-interactive)"
         GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" \
-            chezmoi init --apply --no-tty \
+            chezmoi init "${init_apply[@]}" --no-tty \
             richeju/mac-dotfiles </dev/null
     else
         if [[ -z "$GIT_NAME" || -z "$GIT_EMAIL" ]]; then
@@ -512,8 +589,11 @@ else
                 IFS= read -r GIT_EMAIL </dev/tty
             fi
         fi
-        GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" chezmoi init --apply \
+        GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" chezmoi init "${init_apply[@]}" \
             richeju/mac-dotfiles </dev/null
+    fi
+    if [[ "$DOTFILES_REF" != "main" ]]; then
+        apply_reviewed_dotfiles_ref
     fi
     DOTFILES_APPLIED="true"
 fi

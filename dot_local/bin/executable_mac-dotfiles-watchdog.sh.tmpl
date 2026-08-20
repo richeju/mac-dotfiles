@@ -184,7 +184,7 @@ latest_maintenance_completed() {
 }
 
 latest_snapshot() {
-    find "$RECOVERY_DIR" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tar.gz.enc' \) -print 2>/dev/null | sort | tail -n 1
+    find "$RECOVERY_DIR" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tar.gz.age' -o -name '*.tar.gz.enc' \) -print 2>/dev/null | sort | tail -n 1
 }
 
 check_recovery_snapshot() {

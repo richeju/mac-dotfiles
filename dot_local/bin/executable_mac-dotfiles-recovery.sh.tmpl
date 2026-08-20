@@ -6,7 +6,7 @@ umask 077
 STATE_DIR="${MAC_DOTFILES_STATE_DIR:-$HOME/.local/state/mac-dotfiles}"
 SNAPSHOT_DIR="${MAC_DOTFILES_SNAPSHOT_DIR:-$STATE_DIR/recovery-snapshots}"
 LOCK_DIR="$STATE_DIR/operation.lock"
-FORMAT_VERSION=1
+FORMAT_VERSION=2
 ASSUME_YES=0
 ENCRYPT=0
 LOCK_HELD=0
@@ -28,7 +28,8 @@ Commands:
 
 Snapshots contain an explicit configuration allowlist and Homebrew inventories.
 Passwords, SSH keys, tokens, browser data, and application data are excluded.
-Encrypted snapshots use OpenSSL AES-256-CBC with PBKDF2.
+New encrypted snapshots use age passphrase encryption. Legacy OpenSSL
+AES-256-CBC/PBKDF2 .enc snapshots remain readable.
 USAGE
 }
 
@@ -118,27 +119,65 @@ allowed_relative_targets() {
 }
 
 is_allowed_relative() {
-    local candidate="$1" allowed
+    local candidate="$1" allowed matched=1
     while IFS= read -r allowed; do
-        [[ "$candidate" != "$allowed" ]] || return 0
+        [[ "$candidate" != "$allowed" ]] || matched=0
     done < <(allowed_relative_targets)
-    return 1
+    return "$matched"
 }
 
-encrypt_archive() {
-    local source="$1" destination="$2"
-    if [[ -n "${MAC_DOTFILES_RECOVERY_PASSWORD_FILE:-}" ]]; then
-        [[ -f "$MAC_DOTFILES_RECOVERY_PASSWORD_FILE" ]] || die "Recovery password file does not exist"
-        openssl enc -aes-256-cbc -salt -pbkdf2 -pass "file:$MAC_DOTFILES_RECOVERY_PASSWORD_FILE" -in "$source" -out "$destination"
+validate_private_file() {
+    local path="$1" label="$2" mode
+    [[ -f "$path" ]] || die "$label does not exist"
+    if mode="$(stat -f '%Lp' "$path" 2>/dev/null)"; then
+        :
     else
-        openssl enc -aes-256-cbc -salt -pbkdf2 -in "$source" -out "$destination"
+        mode="$(stat -c '%a' "$path" 2>/dev/null)" || die "Unable to inspect $label permissions"
+    fi
+    if (((8#$mode & 077) != 0)); then
+        die "$label must not be accessible by group or others"
     fi
 }
 
-decrypt_archive() {
+password_from_file() {
+    local password
+    validate_private_file "$MAC_DOTFILES_RECOVERY_PASSWORD_FILE" "Recovery password file"
+    password="$(<"$MAC_DOTFILES_RECOVERY_PASSWORD_FILE")"
+    [[ -n "$password" ]] || die "Recovery password file is empty"
+    printf '%s' "$password"
+}
+
+encrypt_archive_age() {
+    local source="$1" destination="$2" recipient="${MAC_DOTFILES_RECOVERY_AGE_RECIPIENT:-}"
+    if [[ -n "$recipient" ]]; then
+        [[ -z "${MAC_DOTFILES_RECOVERY_PASSWORD_FILE:-}" ]] ||
+            die "Choose either an age recipient or a legacy recovery password file, not both"
+        age --recipient "$recipient" --output "$destination" "$source"
+    elif [[ -n "${MAC_DOTFILES_RECOVERY_PASSWORD_FILE:-}" ]]; then
+        die "Password files are supported only for legacy .enc snapshots; use MAC_DOTFILES_RECOVERY_AGE_RECIPIENT"
+    else
+        age --passphrase --output "$destination" "$source"
+    fi
+}
+
+decrypt_archive_age() {
+    local source="$1" destination="$2" identity="${MAC_DOTFILES_RECOVERY_AGE_IDENTITY_FILE:-}"
+    if [[ -n "$identity" ]]; then
+        [[ -z "${MAC_DOTFILES_RECOVERY_PASSWORD_FILE:-}" ]] ||
+            die "Choose either an age identity or a legacy recovery password file, not both"
+        validate_private_file "$identity" "Recovery age identity file"
+        age --decrypt --identity "$identity" --output "$destination" "$source"
+    elif [[ -n "${MAC_DOTFILES_RECOVERY_PASSWORD_FILE:-}" ]]; then
+        die "Password files are supported only for legacy .enc snapshots; use MAC_DOTFILES_RECOVERY_AGE_IDENTITY_FILE"
+    else
+        age --decrypt --output "$destination" "$source"
+    fi
+}
+
+decrypt_archive_legacy() {
     local source="$1" destination="$2"
     if [[ -n "${MAC_DOTFILES_RECOVERY_PASSWORD_FILE:-}" ]]; then
-        [[ -f "$MAC_DOTFILES_RECOVERY_PASSWORD_FILE" ]] || die "Recovery password file does not exist"
+        password_from_file >/dev/null
         openssl enc -d -aes-256-cbc -pbkdf2 -pass "file:$MAC_DOTFILES_RECOVERY_PASSWORD_FILE" -in "$source" -out "$destination"
     else
         openssl enc -d -aes-256-cbc -pbkdf2 -in "$source" -out "$destination"
@@ -207,7 +246,7 @@ create_snapshot() {
     id="$(date '+%Y%m%d-%H%M%S')"
     mkdir -p "$SNAPSHOT_DIR"
     output="${output:-$SNAPSHOT_DIR/mac-dotfiles-$id.tar.gz}"
-    [[ "$ENCRYPT" -eq 0 || "$output" == *.enc ]] || output="$output.enc"
+    [[ "$ENCRYPT" -eq 0 || "$output" == *.age ]] || output="$output.age"
     new_temp_dir mac-dotfiles-recovery
     work="$NEW_TEMP_DIR"
     build_snapshot "$work"
@@ -216,8 +255,8 @@ create_snapshot() {
     mkdir -p "$(dirname "$output")"
     PARTIAL_OUTPUT="$output.tmp.$$"
     if [[ "$ENCRYPT" -eq 1 ]]; then
-        command -v openssl >/dev/null 2>&1 || die "openssl is required for --encrypt"
-        encrypt_archive "$archive" "$PARTIAL_OUTPUT"
+        command -v age >/dev/null 2>&1 || die "age is required for --encrypt"
+        encrypt_archive_age "$archive" "$PARTIAL_OUTPUT"
     else
         cp "$archive" "$PARTIAL_OUTPUT"
     fi
@@ -230,7 +269,10 @@ create_snapshot() {
 list_snapshots() {
     local found=0 path
     echo "Recovery snapshots"
-    for path in "$SNAPSHOT_DIR"/mac-dotfiles-*.tar.gz "$SNAPSHOT_DIR"/mac-dotfiles-*.tar.gz.enc; do
+    for path in \
+        "$SNAPSHOT_DIR"/mac-dotfiles-*.tar.gz \
+        "$SNAPSHOT_DIR"/mac-dotfiles-*.tar.gz.age \
+        "$SNAPSHOT_DIR"/mac-dotfiles-*.tar.gz.enc; do
         [[ -f "$path" ]] || continue
         found=1
         printf '  %s\t%s\n' "$(basename "$path")" "$(du -h "$path" | awk '{print $1}')"
@@ -239,25 +281,39 @@ list_snapshots() {
 }
 
 unpack_snapshot() {
-    local snapshot="$1" destination="$2" archive entry
+    local snapshot="$1" destination="$2" archive entry listing line type
     archive="$snapshot"
     [[ -f "$snapshot" ]] || die "Snapshot not found: $snapshot"
-    if [[ "$snapshot" == *.enc ]]; then
+    if [[ "$snapshot" == *.age ]]; then
+        command -v age >/dev/null 2>&1 || die "age is required for encrypted snapshots"
+        archive="$destination/decrypted.tar.gz"
+        decrypt_archive_age "$snapshot" "$archive"
+    elif [[ "$snapshot" == *.enc ]]; then
         command -v openssl >/dev/null 2>&1 || die "openssl is required for encrypted snapshots"
         archive="$destination/decrypted.tar.gz"
-        decrypt_archive "$snapshot" "$archive"
+        decrypt_archive_legacy "$snapshot" "$archive"
     fi
+    listing="$(tar -tzf "$archive")" || die "Unable to list recovery archive"
     while IFS= read -r entry; do
         case "$entry" in
             /* | ../* | */../* | */..) die "Unsafe path in recovery archive: $entry" ;;
         esac
-    done < <(tar -tzf "$archive")
+    done <<<"$listing"
+    listing="$(LC_ALL=C tar -tvzf "$archive")" || die "Unable to inspect recovery archive entries"
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        type="${line:0:1}"
+        case "$type" in
+            - | d) ;;
+            *) die "Unsupported entry type in recovery archive: $type" ;;
+        esac
+    done <<<"$listing"
     tar -C "$destination" -xzf "$archive"
 }
 
 verify_unpacked() {
     local root="$1" expected file actual relative duplicates declared_count actual_count checksum_count
-    jq -e '.schema_version == 1 and .kind == "mac-dotfiles-recovery" and .secrets_included == false' "$root/manifest.json" >/dev/null || die "Unsupported or invalid recovery manifest"
+    jq -e '(.schema_version == 1 or .schema_version == 2) and .kind == "mac-dotfiles-recovery" and .secrets_included == false' "$root/manifest.json" >/dev/null || die "Unsupported or invalid recovery manifest"
     declared_count="$(jq -r '.file_count' "$root/manifest.json")"
     actual_count="$(awk 'NF {count++} END {print count+0}' "$root/files.txt")"
     [[ "$declared_count" =~ ^[0-9]+$ && "$declared_count" -eq "$actual_count" ]] || die "Recovery manifest file count does not match its payload"

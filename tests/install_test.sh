@@ -111,6 +111,10 @@ case "$1" in
     echo "chezmoi-init-args:$*"
     echo "chezmoi-init-profile:${MAC_DOTFILES_PROFILE:-missing}"
     echo "chezmoi-init-name:${GIT_NAME:-missing}"
+    mkdir -p "$HOME/.local/share/chezmoi"
+    ;;
+  apply)
+    echo "chezmoi-apply-args:$*"
     ;;
 esac
 exit 0
@@ -296,6 +300,53 @@ test_auto_init_uses_supported_chezmoi_flags_and_profile() {
     assert_contains "$output" "chezmoi-init-name:Test User" "Git identity should reach the config template"
 }
 
+test_fresh_init_can_apply_reviewed_commit_then_restore_branch() {
+    local env_dir output status git_log reviewed_ref
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
+    rm -rf "$env_dir/home/.local/share/chezmoi"
+    git_log="$env_dir/git.log"
+    reviewed_ref="0123456789abcdef0123456789abcdef01234567"
+    cat >"$env_dir/bin/git" <<'GIT'
+#!/usr/bin/env bash
+echo "$*" >>"$GIT_TEST_LOG"
+if [[ "$1" == "-C" ]]; then
+  shift 2
+fi
+case "$1 $2" in
+  "rev-parse --is-inside-work-tree") exit 0 ;;
+  "status --porcelain") exit 0 ;;
+  "fetch origin") exit 0 ;;
+  "rev-parse --verify") echo "$REVIEWED_REF"; exit 0 ;;
+  "symbolic-ref --quiet") echo main; exit 0 ;;
+  "rev-parse HEAD") echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; exit 0 ;;
+  "switch --detach") exit 0 ;;
+  "switch main") exit 0 ;;
+esac
+exit 0
+GIT
+    chmod +x "$env_dir/bin/git"
+
+    set +e
+    output="$(printf 'stdin-sentinel-from-pipe\n' | HOME="$env_dir/home" GIT_TEST_LOG="$git_log" \
+        REVIEWED_REF="$reviewed_ref" MAC_DOTFILES_REF="$reviewed_ref" \
+        PATH="$env_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin" OSTYPE=darwin23 \
+        MAC_DOTFILES_SKIP_BREW_PATH_DETECTION=1 bash "$INSTALL_SCRIPT" \
+        --auto --git-name "Test User" --git-email test@example.com 2>&1)"
+    status=$?
+    set -e
+
+    assert_exit_code "$status" 0 "fresh bootstrap should apply a reviewed commit"
+    assert_contains "$output" "chezmoi-init-args:init --no-tty richeju/mac-dotfiles" \
+        "reviewed bootstrap should initialize without applying mutable main"
+    assert_contains "$output" "chezmoi-apply-args:apply --force --no-tty" \
+        "reviewed bootstrap should apply only after checking out the reviewed commit"
+    assert_contains "$(cat "$git_log")" "switch --detach $reviewed_ref" \
+        "reviewed bootstrap should detach at the selected commit"
+    assert_contains "$(cat "$git_log")" "switch main" \
+        "reviewed bootstrap should restore the tracking branch after apply"
+}
+
 test_unknown_profile_is_rejected() {
     local env_dir run_output status output
     env_dir="$(setup_env)"
@@ -316,6 +367,7 @@ main() {
     test_install_summary_does_not_treat_outdated_packages_as_missing
     test_minimal_mode_skips_bundle_summary
     test_auto_init_uses_supported_chezmoi_flags_and_profile
+    test_fresh_init_can_apply_reviewed_commit_then_restore_branch
     test_unknown_profile_is_rejected
     echo "[PASS] install.sh tests completed"
 }

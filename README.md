@@ -102,7 +102,7 @@ The active profile is stored per Mac in the chezmoi configuration. Available pro
 - `personal`: personal applications and power-user CLI tools
 - `developer`: personal profile plus Go and Python toolchains
 - `gaming`: personal profile plus Discord and GeForce NOW
-- `full`: the complete current setup; this is the backward-compatible default
+- `full`: personal profile plus Discord and GeForce NOW; this is the backward-compatible default
 
 Changing a profile only changes the desired state. It never installs or removes anything immediately:
 
@@ -328,8 +328,8 @@ mac-dotfiles.sh migrate apply
 mac-dotfiles.sh certify --markdown --output ~/mac-dotfiles-certification.md
 mac-dotfiles.sh recovery create --encrypt
 mac-dotfiles.sh recovery list
-mac-dotfiles.sh recovery inspect /path/to/snapshot.tar.gz.enc
-mac-dotfiles.sh recovery restore /path/to/snapshot.tar.gz.enc --dry-run
+mac-dotfiles.sh recovery inspect /path/to/snapshot.tar.gz.age
+mac-dotfiles.sh recovery restore /path/to/snapshot.tar.gz.age --dry-run
 mac-dotfiles.sh status
 mac-dotfiles.sh watch run --no-notify
 ```
@@ -340,15 +340,15 @@ Use `mac-dotfiles.sh repair` after the initial install whenever you want to put 
 
 ```bash
 mac-dotfiles.sh recovery create
-mac-dotfiles.sh recovery create --encrypt --output ~/Documents/mac-recovery.tar.gz.enc
-mac-dotfiles.sh recovery verify ~/Documents/mac-recovery.tar.gz.enc
-mac-dotfiles.sh recovery restore ~/Documents/mac-recovery.tar.gz.enc --dry-run
-mac-dotfiles.sh recovery restore ~/Documents/mac-recovery.tar.gz.enc --yes
+mac-dotfiles.sh recovery create --encrypt --output ~/Documents/mac-recovery.tar.gz.age
+mac-dotfiles.sh recovery verify ~/Documents/mac-recovery.tar.gz.age
+mac-dotfiles.sh recovery restore ~/Documents/mac-recovery.tar.gz.age --dry-run
+mac-dotfiles.sh recovery restore ~/Documents/mac-recovery.tar.gz.age --yes
 ```
 
-Snapshots use a versioned manifest and SHA-256 checksums. They contain an explicit allowlist of managed configuration, the active schema/profile metadata, and Homebrew inventories. Passwords, tokens, SSH keys, browser data, and application data are excluded. `--encrypt` uses AES-256-CBC with PBKDF2 and asks for a password without storing it.
+Snapshots use a versioned manifest and SHA-256 checksums. They contain an explicit allowlist of managed configuration, the active schema/profile metadata, and Homebrew inventories. Passwords, tokens, SSH keys, browser data, and application data are excluded. New `--encrypt` snapshots use authenticated `age` passphrase encryption. Legacy `.enc` snapshots created with OpenSSL AES-256-CBC/PBKDF2 remain readable.
 
-For non-interactive automation, point `MAC_DOTFILES_RECOVERY_PASSWORD_FILE` to a permission-restricted file; OpenSSL reads the password from that file and its value never appears in the process arguments. Snapshots and rollback artifacts are created with owner-only permissions, snapshot writes are atomic, and verification rejects duplicate/missing checksums, mismatched manifests, unsafe archive paths, symlink payloads, and any restore target outside the documented allowlist.
+Without extra variables, `--encrypt` asks for an `age` passphrase on the terminal. For non-interactive automation, set `MAC_DOTFILES_RECOVERY_AGE_RECIPIENT` while creating the snapshot and `MAC_DOTFILES_RECOVERY_AGE_IDENTITY_FILE` while inspecting, verifying, or restoring it. Identity files must be owner-only. `MAC_DOTFILES_RECOVERY_PASSWORD_FILE` remains available only for legacy OpenSSL `.enc` snapshots. Snapshots and rollback artifacts are created with owner-only permissions, snapshot writes are atomic, and verification rejects duplicate/missing checksums, mismatched manifests, unsafe archive paths, link entries, and any restore target outside the documented allowlist.
 
 Restore verifies every checksum before showing its plan. It preserves the current files under `~/.local/state/mac-dotfiles/recovery-rollbacks/`, restores transactionally under the shared operation lock, and rolls back automatically if a file cannot be replaced. Homebrew inventories remain advisory; convergence performs package reconciliation afterward.
 
@@ -465,6 +465,9 @@ brew bundle --global --verbose
 - `migrations/*.sh` - Ordered, idempotent repository schema migrations
 - `dot_local/bin/executable_mac-dotfiles.sh.tmpl` - Compact launcher/menu for common workflows
 - `dot_local/bin/executable_mac-dotfiles-converge.sh.tmpl` - Profile, plan, drift, transaction, validation, and rollback engine
+- `dot_local/bin/executable_mac-dotfiles-configure-dock.sh.tmpl` - Idempotent Dock preference helper used by direct and transactional applies
+- `dot_local/bin/executable_mac-dotfiles-configure-finder-and-inputs.sh` - Idempotent Finder/input preference helper
+- `dot_local/bin/executable_mac-dotfiles-harden-macos-baseline.sh` - Idempotent macOS hardening helper
 - `dot_local/bin/executable_mac-dotfiles-migrate.sh.tmpl` - Versioned schema migration planner and runner
 - `dot_local/bin/executable_mac-dotfiles-certify.sh.tmpl` - Versioned repository and live-machine certification attestation
 - `dot_local/bin/executable_mac-dotfiles-certified-update.sh.tmpl` - Pre-apply candidate certification, transactional convergence, and last-known-good source rollback
@@ -472,8 +475,8 @@ brew bundle --global --verbose
 - `dot_local/bin/executable_mac-dotfiles-recovery.sh.tmpl` - Portable, optionally encrypted disaster-recovery snapshots and transactional restore
 - `dot_local/bin/executable_mac-dotfiles-watchdog.sh.tmpl` - Proactive health state, cooldown, and native macOS notifications
 - `run_onchange_configure-dock-darwin.sh.tmpl` - Dock configuration reapplied when its desired values change
-- `run_onchange_configure-finder-and-inputs-darwin.sh` - Finder and input comfort defaults, reapplied when the baseline changes
-- `run_onchange_harden-macos-baseline-darwin.sh` - macOS hardening baseline, reapplied when the baseline changes
+- `run_onchange_configure-finder-and-inputs-darwin.sh.tmpl` - Finder and input comfort defaults, reapplied when the helper changes
+- `run_onchange_harden-macos-baseline-darwin.sh.tmpl` - macOS hardening baseline, reapplied when the helper changes
 - `run_onchange_install-packages-darwin.sh.tmpl` - Package installer (runs when Brewfile changes)
 - `run_onchange_update-and-cleanup-darwin.sh.tmpl` - Maintenance script triggered when template changes
 - `dot_local/bin/executable_mac-dotfiles-maintenance.sh.tmpl` - Daily maintenance runner written to `~/.local/bin`
@@ -502,7 +505,7 @@ A helper wrapper is also provided:
 
 ## ℹ️ Notes
 
-- Compatible with **macOS** only (Intel and Apple Silicon)
+- Compatible with **macOS on Apple Silicon**
 - Scripts check for existing installations before proceeding
 - Already installed tools are skipped
 - Interactive Git configuration if not already configured
@@ -511,7 +514,7 @@ A helper wrapper is also provided:
 
 ## 🔐 Security
 
-The scripts are **public** and can be audited before execution. No sensitive information is stored in this repository. The `.chezmoiignore` file protects sensitive files from being tracked.
+The scripts are **public** and can be audited before execution. No sensitive information is stored in this repository. `.chezmoiignore` prevents repository-only and sensitive paths from being applied by chezmoi; `.gitignore` reduces accidental local additions, and CI scans the Git history for secrets.
 
 ## 🔄 Updating
 

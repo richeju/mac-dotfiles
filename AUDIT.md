@@ -4,6 +4,20 @@ Date : 2026-08-20
 
 Révision inspectée : `00f32b62da1eac20f8a870ed3655a87be0e87b88` (`main`)
 
+## Suivi de mise en œuvre
+
+Les constats ci-dessous décrivent l'état de la révision auditée. La branche de correction associée applique les décisions suivantes :
+
+| Constat | Traitement |
+|---|---|
+| Hooks Dock/Finder/hardening consommés sans application | Corrigé par des helpers idempotents appelés par chezmoi et par la convergence |
+| Compatibilité Intel incohérente | Périmètre assumé Apple Silicon et documentation corrigée |
+| Bootstrap et Actions sur références mutables | Installeur Homebrew vérifié sur commit/checksum, Actions épinglées, bootstrap reproductible par commit |
+| Chiffrement recovery AES-CBC | Nouveau format v2 avec `age`, lecture des anciens `.enc` conservée |
+| Prévention des secrets | `.gitignore` défensif et scan Gitleaks de l'historique en CI |
+| Profil `full` ambigu | Description ramenée explicitement à `personal + gaming`, sans installer Go/Python par surprise |
+| Bruit et couverture recovery | Erreurs de pipe supprimées, stderr attendu capturé, tests symlink/hardlink et altération ajoutés |
+
 ## Verdict
 
 Le dépôt est nettement plus mûr qu'un dépôt de dotfiles classique. Le modèle de convergence, les transactions, les migrations, la certification, le last-known-good, le watchdog et la restauration forment un ensemble cohérent et bien testé. La documentation décrit aussi honnêtement les limites du rollback Homebrew et du profil NIST.
