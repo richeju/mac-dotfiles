@@ -110,9 +110,9 @@ Try:
   curl -fsSLo /tmp/homebrew-install.sh https://raw.githubusercontent.com/Homebrew/install/cced90146ea6d3057c03a636b668fef177415eb3/install.sh
   echo '12479a24be3f5307eecac7cde670fad7118640f031229e964f544b1367b52a41  /tmp/homebrew-install.sh' | shasum -a 256 -c -
   /bin/bash /tmp/homebrew-install.sh
-  curl -fsSLo /tmp/mac-dotfiles-install.sh https://raw.githubusercontent.com/richeju/mac-dotfiles/34c3c041a1247664e99b983a4c04c04d0a855488/install.sh
-  echo '68ce04cf4ffbb0068a8268295e5b4e097c998131bfd9a5bb3a0fdb503face0af  /tmp/mac-dotfiles-install.sh' | shasum -a 256 -c -
-  MAC_DOTFILES_REF=34c3c041a1247664e99b983a4c04c04d0a855488 bash /tmp/mac-dotfiles-install.sh
+  curl -fsSLo /tmp/mac-dotfiles-install.sh https://raw.githubusercontent.com/richeju/mac-dotfiles/690526c90a7a4f259221d488b485a1f8f3d79dae/install.sh
+  echo 'aee26229475400b122fe9a49fa8026eb446310b9bec4f31d4d99671b604da479  /tmp/mac-dotfiles-install.sh' | shasum -a 256 -c -
+  MAC_DOTFILES_REF=690526c90a7a4f259221d488b485a1f8f3d79dae bash /tmp/mac-dotfiles-install.sh
 TEXT
             ;;
         command:chezmoi)
