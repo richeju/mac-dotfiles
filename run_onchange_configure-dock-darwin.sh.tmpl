@@ -1,31 +1,16 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1083 # chezmoi template placeholders are used below.
-{{- $dock := index . "dock" | default (dict "size" 48 "autohide" true "autohide_delay" 0 "animation_speed" 0.5 "show_recents" false "minimize_effect" "scale" "minimize_to_application" true "show_process_indicators" true) -}}
-{{- $dockSize := index $dock "size" | default 48 -}}
-{{- $dockAutohide := index $dock "autohide" | default true -}}
-{{- $dockAutohideDelay := index $dock "autohide_delay" | default 0 -}}
-{{- $dockAnimationSpeed := index $dock "animation_speed" | default 0.5 -}}
-{{- $dockShowRecents := index $dock "show_recents" | default false -}}
-{{- $dockMinimizeEffect := index $dock "minimize_effect" | default "scale" -}}
-{{- $dockMinimizeToApplication := index $dock "minimize_to_application" | default true -}}
-{{- $dockShowProcessIndicators := index $dock "show_process_indicators" | default true -}}
+# Re-run when the managed helper changes.
+# Hash: {{ include "dot_local/bin/executable_mac-dotfiles-configure-dock.sh.tmpl" | sha256sum }}
 set -euo pipefail
 
 if [[ "${MAC_DOTFILES_ORCHESTRATED:-0}" == "1" ]]; then
-  echo "ℹ️ Dock defaults skipped during transactional convergence."
-  exit 0
+    echo "ℹ️ Dock defaults delegated to transactional convergence."
+    exit 0
 fi
 
-echo "Configuring Dock..."
-
-defaults write com.apple.dock tilesize -int {{ $dockSize }}
-defaults write com.apple.dock autohide -bool {{ $dockAutohide }}
-defaults write com.apple.dock autohide-delay -float {{ $dockAutohideDelay }}
-defaults write com.apple.dock autohide-time-modifier -float {{ $dockAnimationSpeed }}
-defaults write com.apple.dock show-recents -bool {{ $dockShowRecents }}
-defaults write com.apple.dock mineffect -string "{{ $dockMinimizeEffect }}"
-defaults write com.apple.dock minimize-to-application -bool {{ $dockMinimizeToApplication }}
-defaults write com.apple.dock show-process-indicators -bool {{ $dockShowProcessIndicators }}
-
-killall Dock || true
-echo "✅ Dock configuré (taille {{ $dockSize }}px)"
+HELPER="$HOME/.local/bin/mac-dotfiles-configure-dock.sh"
+[[ -x "$HELPER" ]] || {
+    echo "❌ Missing Dock helper: $HELPER" >&2
+    exit 1
+}
+exec "$HELPER"

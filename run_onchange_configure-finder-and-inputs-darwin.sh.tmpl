@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# Re-run when the managed helper changes.
+# Hash: {{ include "dot_local/bin/executable_mac-dotfiles-configure-finder-and-inputs.sh" | sha256sum }}
+set -euo pipefail
+
+if [[ "${MAC_DOTFILES_ORCHESTRATED:-0}" == "1" ]]; then
+    echo "ℹ️ Finder/input defaults delegated to transactional convergence."
+    exit 0
+fi
+
+HELPER="$HOME/.local/bin/mac-dotfiles-configure-finder-and-inputs.sh"
+[[ -x "$HELPER" ]] || {
+    echo "❌ Missing Finder/input helper: $HELPER" >&2
+    exit 1
+}
+exec "$HELPER"

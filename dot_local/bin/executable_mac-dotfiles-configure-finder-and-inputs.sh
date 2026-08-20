@@ -2,11 +2,6 @@
 
 set -euo pipefail
 
-if [[ "${MAC_DOTFILES_ORCHESTRATED:-0}" == "1" ]]; then
-    echo "ℹ️ Finder/input defaults skipped during transactional convergence."
-    exit 0
-fi
-
 echo "🛠️ Applying Finder and input comfort defaults..."
 
 # Finder: show status and path bars for quicker navigation.
@@ -31,7 +26,5 @@ defaults write com.apple.AppleMultitouchTrackpad Clicking -bool true
 defaults -currentHost write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
 defaults write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
 
-# Apply relevant changes.
 killall Finder >/dev/null 2>&1 || true
-
 echo "✅ Finder and input defaults configured"

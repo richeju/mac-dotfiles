@@ -1,5 +1,6 @@
 # Ignore repo files
 .github/
+.gitignore
 README.md
 doctor.sh
 install.sh

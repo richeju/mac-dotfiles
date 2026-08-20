@@ -101,7 +101,17 @@ MOCK
 #!/usr/bin/env bash
 exit 0
 MOCK
+    for helper in \
+        mac-dotfiles-configure-dock.sh \
+        mac-dotfiles-configure-finder-and-inputs.sh \
+        mac-dotfiles-harden-macos-baseline.sh; do
+        cat >"$root/home/.local/bin/$helper" <<'MOCK'
+#!/usr/bin/env bash
+echo "preference-helper:${0##*/}" >>"$TEST_ROOT/commands.log"
+MOCK
+    done
     chmod +x "$root/bin/"*
+    chmod +x "$root/home/.local/bin/"*
 }
 
 run_engine() {
@@ -187,6 +197,12 @@ test_converge_success_records_transaction() {
         fail "transaction should expose versioned JSON state"
     grep -Fq "chezmoi apply" "$root/commands.log" || fail "converge should apply dotfiles"
     grep -Fq "brew bundle install" "$root/commands.log" || fail "converge should reconcile packages"
+    grep -Fq "preference-helper:mac-dotfiles-configure-dock.sh" "$root/commands.log" ||
+        fail "converge should apply Dock preferences"
+    grep -Fq "preference-helper:mac-dotfiles-configure-finder-and-inputs.sh" "$root/commands.log" ||
+        fail "converge should apply Finder/input preferences"
+    grep -Fq "preference-helper:mac-dotfiles-harden-macos-baseline.sh" "$root/commands.log" ||
+        fail "converge should apply the hardening baseline"
 }
 
 test_failure_restores_files_and_absent_targets() {

@@ -110,7 +110,7 @@ profile_description() {
         personal) echo "Daily personal applications and power CLI tools" ;;
         developer) echo "Personal profile plus Go and Python toolchains" ;;
         gaming) echo "Personal profile plus gaming applications" ;;
-        full) echo "Complete current setup (personal + gaming)" ;;
+        full) echo "Personal profile plus gaming applications" ;;
     esac
 }
 
@@ -666,6 +666,20 @@ blocking_validate() {
     return "$status"
 }
 
+apply_managed_preferences() {
+    local helper
+    for helper in \
+        "$HOME/.local/bin/mac-dotfiles-configure-dock.sh" \
+        "$HOME/.local/bin/mac-dotfiles-configure-finder-and-inputs.sh" \
+        "$HOME/.local/bin/mac-dotfiles-harden-macos-baseline.sh"; do
+        [[ -x "$helper" ]] || {
+            echo "✗ Managed preference helper is missing: $helper" >&2
+            return 1
+        }
+        "$helper" || return 1
+    done
+}
+
 validate_command() {
     parse_common_options "$@"
     require_command chezmoi
@@ -707,6 +721,9 @@ apply_convergence() {
 
     echo "==> Validating blocking invariants"
     blocking_validate || return 1
+
+    echo "==> Applying managed macOS preferences"
+    apply_managed_preferences || return 1
 }
 
 confirm_convergence() {

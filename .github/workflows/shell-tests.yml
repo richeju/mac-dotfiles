@@ -7,30 +7,63 @@ on:
       - work
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan repository history for secrets
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+
   shell-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install shell quality tools
-        run: sudo apt-get update && sudo apt-get install -y shellcheck shfmt
+        run: sudo apt-get update && sudo apt-get install -y age shellcheck shfmt
 
       - name: Validate scripts and run test suites
         run: bash tests/test_suite.sh
 
       - name: Run ShellCheck
-        run: shellcheck doctor.sh install.sh lib/*.sh tests/*.sh dot_local/bin/*.sh.tmpl
+        run: bash tests/shell_quality.sh shellcheck
 
       - name: Check shell formatting
-        run: shfmt -d -i 4 -ci doctor.sh install.sh lib/*.sh tests/*.sh dot_local/bin/*.sh.tmpl
+        run: bash tests/shell_quality.sh shfmt
 
   macos-validation:
     runs-on: macos-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install age
+        run: brew install age
 
       - name: Validate shell behavior
         run: bash tests/test_suite.sh
@@ -54,7 +87,8 @@ jobs:
           jq -e '.overall == "pass" and .schema_version == 1' "$RUNNER_TEMP/mac-dotfiles-certification.json"
 
       - name: Upload certification attestation
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mac-dotfiles-certification
           path: ${{ runner.temp }}/mac-dotfiles-certification.json
+          retention-days: 14
