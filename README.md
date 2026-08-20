@@ -7,7 +7,7 @@ Automatic installation and configuration script for new macOS setup using [chezm
 On a new Mac, an already configured Mac, or a machine that needs repair, download and verify the reviewed bootstrap:
 
 ```bash
-DOTFILES_REF=ffd9e4337fa0c1461a3e8c84f682c348ccc71d5d
+DOTFILES_REF=34c3c041a1247664e99b983a4c04c04d0a855488
 INSTALL_SHA256=68ce04cf4ffbb0068a8268295e5b4e097c998131bfd9a5bb3a0fdb503face0af
 curl -fsSLo /tmp/mac-dotfiles-install.sh \
   "https://raw.githubusercontent.com/richeju/mac-dotfiles/$DOTFILES_REF/install.sh"
