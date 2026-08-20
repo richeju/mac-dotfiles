@@ -568,13 +568,15 @@ if [ -d "$HOME/.local/share/chezmoi" ]; then
     DOTFILES_APPLIED="true"
 else
     log_info "Initializing chezmoi with your dotfiles..."
-    init_apply=(--apply)
-    [[ "$DOTFILES_REF" == "main" ]] || init_apply=()
     if [[ "$AUTO_MODE" == "true" ]]; then
         log_info "Running in auto mode (non-interactive)"
-        GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" \
-            chezmoi init "${init_apply[@]}" --no-tty \
-            richeju/mac-dotfiles </dev/null
+        if [[ "$DOTFILES_REF" == "main" ]]; then
+            GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" \
+                chezmoi init --apply --no-tty richeju/mac-dotfiles </dev/null
+        else
+            GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" \
+                chezmoi init --no-tty richeju/mac-dotfiles </dev/null
+        fi
     else
         if [[ -z "$GIT_NAME" || -z "$GIT_EMAIL" ]]; then
             if [[ ! -r /dev/tty ]]; then
@@ -589,8 +591,13 @@ else
                 IFS= read -r GIT_EMAIL </dev/tty
             fi
         fi
-        GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" chezmoi init "${init_apply[@]}" \
-            richeju/mac-dotfiles </dev/null
+        if [[ "$DOTFILES_REF" == "main" ]]; then
+            GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" \
+                chezmoi init --apply richeju/mac-dotfiles </dev/null
+        else
+            GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" \
+                chezmoi init richeju/mac-dotfiles </dev/null
+        fi
     fi
     if [[ "$DOTFILES_REF" != "main" ]]; then
         apply_reviewed_dotfiles_ref
