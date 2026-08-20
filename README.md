@@ -2,50 +2,56 @@
 
 Automatic installation and configuration script for new macOS setup using [chezmoi](https://www.chezmoi.io/)
 
-## 🚀 One-Button Setup
+## 🚀 Reproducible Setup
 
-On a new Mac, an already configured Mac, or a machine that needs repair, run:
+On a new Mac, an already configured Mac, or a machine that needs repair, download and verify the reviewed bootstrap:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash
+DOTFILES_REF=ffd9e4337fa0c1461a3e8c84f682c348ccc71d5d
+INSTALL_SHA256=68ce04cf4ffbb0068a8268295e5b4e097c998131bfd9a5bb3a0fdb503face0af
+curl -fsSLo /tmp/mac-dotfiles-install.sh \
+  "https://raw.githubusercontent.com/richeju/mac-dotfiles/$DOTFILES_REF/install.sh"
+echo "$INSTALL_SHA256  /tmp/mac-dotfiles-install.sh" | shasum -a 256 -c -
+MAC_DOTFILES_REF="$DOTFILES_REF" bash /tmp/mac-dotfiles-install.sh
 ```
 
-This is the main entrypoint. It installs missing prerequisites, initializes or updates chezmoi, applies managed files non-interactively, repairs missing managed helpers, and then exits.
+This is the stable entrypoint. It verifies the installer before execution and applies exactly the reviewed commit before restoring the chezmoi source to its normal tracking branch. It installs missing prerequisites, initializes or updates chezmoi, applies managed files non-interactively, repairs missing managed helpers, and then exits.
 
 When Homebrew is already installed, the installer does not request administrator privileges. A password may still be required on a fresh Mac if Homebrew or macOS command line tools need to be installed.
 
 At the end, the installer prints a compact summary of what is ready and what may still need attention, then points to `mac-dotfiles.sh repair` for post-install reconciliation.
 
-Safer audit-first path:
+Inspect the verified script before executing it if desired:
 ```bash
-curl -fsSL -o /tmp/mac-dotfiles-install.sh https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh
 less /tmp/mac-dotfiles-install.sh
-bash /tmp/mac-dotfiles-install.sh
+MAC_DOTFILES_REF="$DOTFILES_REF" bash /tmp/mac-dotfiles-install.sh
 ```
+
+The shorter `curl .../main/install.sh | bash` form follows a mutable development channel and is intentionally not the recommended bootstrap.
 
 Zero-interaction mode (for full automation):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash -s -- --auto --git-name "Your Name" --git-email "you@example.com"
+MAC_DOTFILES_REF="$DOTFILES_REF" bash /tmp/mac-dotfiles-install.sh \
+  --auto --git-name "Your Name" --git-email "you@example.com"
 ```
 
 Minimal mode (core setup now, full apps later):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash -s -- --minimal
+MAC_DOTFILES_REF="$DOTFILES_REF" bash /tmp/mac-dotfiles-install.sh --minimal
 ```
 
 Minimal mode installs/applies the core dotfiles flow but skips the full Homebrew bundle during the chezmoi run. Later, run `mac-dotfiles.sh repair` to install and reconcile all packages.
 
 Select a persistent machine profile during bootstrap:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | \
-  bash -s -- --profile developer
+MAC_DOTFILES_REF="$DOTFILES_REF" bash /tmp/mac-dotfiles-install.sh --profile developer
 ```
 
 Profiles and `--minimal` are intentionally different: `--minimal` skips package installation once, while `--profile minimal` defines the persistent desired package set for that Mac.
 
 Verification mode (no changes, no sudo prompt):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash -s -- --verify
+MAC_DOTFILES_REF="$DOTFILES_REF" bash /tmp/mac-dotfiles-install.sh --verify
 ```
 
 After installation, an optional local launcher is available for day-to-day actions:

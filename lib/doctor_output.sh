@@ -110,7 +110,9 @@ Try:
   curl -fsSLo /tmp/homebrew-install.sh https://raw.githubusercontent.com/Homebrew/install/cced90146ea6d3057c03a636b668fef177415eb3/install.sh
   echo '12479a24be3f5307eecac7cde670fad7118640f031229e964f544b1367b52a41  /tmp/homebrew-install.sh' | shasum -a 256 -c -
   /bin/bash /tmp/homebrew-install.sh
-  curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash
+  curl -fsSLo /tmp/mac-dotfiles-install.sh https://raw.githubusercontent.com/richeju/mac-dotfiles/ffd9e4337fa0c1461a3e8c84f682c348ccc71d5d/install.sh
+  echo '68ce04cf4ffbb0068a8268295e5b4e097c998131bfd9a5bb3a0fdb503face0af  /tmp/mac-dotfiles-install.sh' | shasum -a 256 -c -
+  MAC_DOTFILES_REF=ffd9e4337fa0c1461a3e8c84f682c348ccc71d5d bash /tmp/mac-dotfiles-install.sh
 TEXT
             ;;
         command:chezmoi)
