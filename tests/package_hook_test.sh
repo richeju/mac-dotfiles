@@ -43,6 +43,13 @@ BREW
 
 main() {
     test_minimal_mode_skips_brew_bundle
+    local output
+    output="$(MAC_DOTFILES_BOOTSTRAP_PACKAGES=1 bash "$PACKAGE_HOOK")"
+    assert_contains "$output" "delegated to bootstrap reconciliation" "bootstrap should own package installation"
+    assert_not_contains "$output" "Installing/updating" "hook should not duplicate bootstrap installation"
+    output="$(MAC_DOTFILES_BOOTSTRAP_PACKAGES=1 bash "$REPO_ROOT/run_onchange_update-and-cleanup-darwin.sh.tmpl")"
+    assert_contains "$output" "Maintenance hook skipped during bootstrap" "bootstrap should not upgrade already installed apps"
+    assert_not_contains "$output" "Starting system maintenance" "bootstrap should defer upgrades to maintenance"
     echo "[PASS] package hook tests completed"
 }
 

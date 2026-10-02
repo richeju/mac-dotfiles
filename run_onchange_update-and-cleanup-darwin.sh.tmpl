@@ -6,6 +6,11 @@ if [[ "${MAC_DOTFILES_ORCHESTRATED:-0}" == "1" ]]; then
     exit 0
 fi
 
+if [[ "${MAC_DOTFILES_BOOTSTRAP_PACKAGES:-0}" == "1" ]]; then
+    echo "ℹ️  Maintenance hook skipped during bootstrap; scheduled maintenance handles upgrades."
+    exit 0
+fi
+
 echo "🔄 Starting system maintenance..."
 
 BREW_MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-brew-maintenance.sh"

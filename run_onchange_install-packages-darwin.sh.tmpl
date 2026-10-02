@@ -12,6 +12,11 @@ if [[ "${MAC_DOTFILES_ORCHESTRATED:-0}" == "1" ]]; then
     exit 0
 fi
 
+if [[ "${MAC_DOTFILES_BOOTSTRAP_PACKAGES:-0}" == "1" ]]; then
+    echo "ℹ️  Package hook delegated to bootstrap reconciliation."
+    exit 0
+fi
+
 echo "📦 Installing/updating packages from Brewfile..."
 
 if [[ "${MAC_DOTFILES_MINIMAL:-0}" == "1" ]]; then

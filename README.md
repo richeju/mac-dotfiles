@@ -10,7 +10,9 @@ On a new Mac or an existing setup, run this command to apply the latest version 
 curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash
 ```
 
-Kindle is installed through the Mac App Store and requires App Store sign-in.
+Every run checks the active profile and reinstalls missing packages, even when the Brewfile has not changed. Existing packages are not upgraded by this command; scheduled maintenance handles upgrades.
+
+Kindle is installed through the Mac App Store. The final summary reports whether it is installed, requires App Store sign-in, or failed to install, with a direct command to open its App Store page. Sign in and acquire the app if needed, then rerun the quick setup command. Incomplete package installation exits with status 1 after printing the summary.
 
 ### Reproducible Setup (optional)
 
@@ -73,8 +75,8 @@ The installer adds `~/.local/bin` to your shell `PATH` so managed helper command
 
 This repository is designed for both:
 
-- A fresh macOS install: `install.sh` installs Homebrew and chezmoi, applies the dotfiles, renders `~/.Brewfile`, then installs the required packages with `brew bundle --global --verbose`.
-- Existing installs and repairs: rerunning `install.sh` reconciles managed files with `chezmoi update --apply --force --no-tty`, so missing managed helpers are restored without prompts.
+- A fresh macOS install: `install.sh` installs Homebrew and chezmoi, applies the dotfiles, renders `~/.Brewfile`, then installs missing packages with `brew bundle install --global --no-upgrade --verbose`.
+- Existing installs and repairs: rerunning `install.sh` reconciles managed files with `chezmoi update --apply --force --no-tty`, then checks and installs missing packages independently of the onchange hook. Deleted applications are restored even when the Brewfile is unchanged.
 - Ongoing updates: the managed maintenance scripts fetch and certify a fast-forward candidate, converge transactionally, then run Homebrew upgrades, cleanup, diagnostics, and the tailored NIST audit.
 - Readiness checks: `install.sh --verify` audits Homebrew, chezmoi, `~/.Brewfile`, package status, GitHub CLI/auth, and maintenance files without changing the machine.
 

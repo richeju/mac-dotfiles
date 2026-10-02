@@ -347,6 +347,97 @@ GIT
         "reviewed bootstrap should restore the tracking branch after apply"
 }
 
+write_package_mocks() {
+    local env_dir="$1"
+    cat >"$env_dir/bin/brew" <<'BREW'
+#!/usr/bin/env bash
+case "$1" in
+  --prefix) echo "/opt/homebrew" ;;
+  bundle)
+    case "$2" in
+      check) [[ -f "$HOME/packages-present" ]] ;;
+      install)
+        echo "$*" >>"$HOME/package-calls"
+        [[ " $* " == *" --no-upgrade "* ]] || exit 9
+        if IFS= read -r -t 0.1 _line; then exit 8; fi
+        case "$(cat "$HOME/package-mode" 2>/dev/null)" in
+          sign-in) echo "Error: Not signed in to the App Store"; exit 1 ;;
+          failure) echo "Error: download failed"; exit 1 ;;
+        esac
+        touch "$HOME/packages-present"
+        ;;
+    esac
+    ;;
+esac
+BREW
+    cat >"$env_dir/bin/mas" <<'MAS'
+#!/usr/bin/env bash
+[[ "$1" == "list" ]] || exit 2
+[[ ! -f "$HOME/packages-present" ]] || echo '302584613 Amazon Kindle (1.0)'
+MAS
+    chmod +x "$env_dir/bin/brew" "$env_dir/bin/mas"
+}
+
+test_relaunch_reinstalls_missing_packages() {
+    local env_dir run_output
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
+    write_package_mocks "$env_dir"
+
+    run_output="$(run_install "$env_dir")"
+    assert_exit_code "$(parse_status "$run_output")" 0 "first run should install missing packages"
+    run_output="$(run_install "$env_dir")"
+    assert_exit_code "$(parse_status "$run_output")" 0 "unchanged second run should succeed"
+    [[ "$(wc -l <"$env_dir/home/package-calls" | tr -d ' ')" == 1 ]] || fail "satisfied bundle should not be reinstalled"
+
+    rm "$env_dir/home/packages-present"
+    run_output="$(run_install "$env_dir")"
+    assert_exit_code "$(parse_status "$run_output")" 0 "relaunch should repair a deleted package"
+    [[ "$(wc -l <"$env_dir/home/package-calls" | tr -d ' ')" == 2 ]] || fail "unchanged Brewfile should still reconcile deleted packages"
+    rm -rf "$env_dir"
+}
+
+test_app_store_diagnostics() {
+    local env_dir mode run_output expected status
+    for mode in installed sign-in failure; do
+        env_dir="$(setup_env)"
+        write_common_mocks "$env_dir"
+        write_package_mocks "$env_dir"
+        echo 'mas "Amazon Kindle", id: 302584613' >"$env_dir/home/.Brewfile"
+        echo "$mode" >"$env_dir/home/package-mode"
+        run_output="$(run_install "$env_dir")"
+        status=1
+        case "$mode" in
+            installed)
+                expected="Amazon Kindle: installed (Mac App Store)"
+                status=0
+                ;;
+            sign-in) expected="Amazon Kindle: App Store sign-in required" ;;
+            failure) expected="Amazon Kindle: installation failed; app is still missing" ;;
+        esac
+        assert_exit_code "$(parse_status "$run_output")" "$status" "App Store outcome should affect bootstrap status"
+        assert_contains "$run_output" "$expected" "App Store outcome should be explicit"
+        assert_contains "$run_output" "Install summary" "bundle failure should not prevent the summary"
+        if [[ "$status" -ne 0 ]]; then
+            assert_contains "$run_output" "macappstore://itunes.apple.com/app/id302584613" "missing app should have a direct recovery action"
+            assert_not_contains "$run_output" "Everything looks squared away" "failed install must not report all-clear"
+        fi
+        rm -rf "$env_dir"
+    done
+}
+
+test_minimal_and_verify_do_not_reconcile_packages() {
+    local env_dir run_output option
+    env_dir="$(setup_env)"
+    write_common_mocks "$env_dir"
+    write_package_mocks "$env_dir"
+    for option in --minimal --verify; do
+        run_output="$(run_install "$env_dir" "$option")"
+        [[ ! -f "$env_dir/home/package-calls" ]] || fail "$option should never install packages"
+    done
+    rm -rf "$env_dir"
+}
+
 test_unknown_profile_is_rejected() {
     local env_dir run_output status output
     env_dir="$(setup_env)"
@@ -369,6 +460,9 @@ main() {
     test_auto_init_uses_supported_chezmoi_flags_and_profile
     test_fresh_init_can_apply_reviewed_commit_then_restore_branch
     test_unknown_profile_is_rejected
+    test_relaunch_reinstalls_missing_packages
+    test_app_store_diagnostics
+    test_minimal_and_verify_do_not_reconcile_packages
     echo "[PASS] install.sh tests completed"
 }
 

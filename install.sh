@@ -127,6 +127,8 @@ log_error() {
 }
 DOTFILES_APPLIED="false"
 VERIFY_WARNINGS=0
+PACKAGES_STATUS=0
+PACKAGES_LOG=""
 
 require_command() {
     if ! command -v "$1" &>/dev/null; then
@@ -306,6 +308,7 @@ start_sudo_keepalive() {
     SUDO_KEEPALIVE_PID=$!
 }
 
+# shellcheck disable=SC2329 # Invoked by the EXIT trap after sudo initialization.
 stop_sudo_keepalive() {
     if [[ -n "${SUDO_KEEPALIVE_PID}" ]]; then
         kill "${SUDO_KEEPALIVE_PID}" &>/dev/null || true
@@ -354,6 +357,66 @@ install_homebrew() {
         rm -f "$installer"
         log_error "Homebrew installer failed with status $status"
     fi
+}
+
+reconcile_packages() {
+    [[ "$MINIMAL_MODE" != "true" ]] || return 0
+    if [[ ! -f "$HOME/.Brewfile" ]]; then
+        log_warning "Package reconciliation failed: ~/.Brewfile is missing"
+        PACKAGES_STATUS=1
+        return
+    fi
+
+    echo "📦 Checking and reconciling installed applications..."
+    if brew bundle check --global --no-upgrade --quiet; then
+        log_info "All declared packages are already installed"
+        return
+    fi
+
+    PACKAGES_LOG="$(mktemp "${TMPDIR:-/tmp}/mac-dotfiles-packages.XXXXXX")"
+    if brew bundle install --global --no-upgrade --verbose </dev/null 2>&1 | tee "$PACKAGES_LOG"; then
+        PACKAGES_STATUS=0
+    else
+        PACKAGES_STATUS=1
+    fi
+}
+
+print_app_store_summary() {
+    local installed="" app_id app_name inspection_failed=0
+    [[ "$MINIMAL_MODE" != "true" && -f "$HOME/.Brewfile" ]] || return 0
+    grep -Eq '^[[:space:]]*mas "' "$HOME/.Brewfile" || return 0
+
+    if command -v mas >/dev/null 2>&1; then
+        installed="$(mas list 2>/dev/null)" || inspection_failed=1
+    else
+        inspection_failed=1
+    fi
+    while IFS=$'\t' read -r app_id app_name; do
+        if [[ "$inspection_failed" -eq 0 ]] && awk -v id="$app_id" '$1 == id {found=1} END {exit !found}' <<<"$installed"; then
+            summary_ok "$app_name: installed (Mac App Store)"
+            continue
+        fi
+        PACKAGES_STATUS=1
+        if [[ -n "$PACKAGES_LOG" ]] && grep -Eiq 'not signed in|sign.?in|Apple (ID|Account)|authenticat' "$PACKAGES_LOG"; then
+            summary_warn "$app_name: App Store sign-in required"
+        elif [[ "$inspection_failed" -eq 1 ]]; then
+            summary_warn "$app_name: unable to verify installation (mas unavailable or failed)"
+        else
+            summary_warn "$app_name: installation failed; app is still missing"
+        fi
+        echo "    Open the App Store, sign in and acquire the app if needed:"
+        echo "    open 'macappstore://itunes.apple.com/app/id$app_id'"
+        echo "    Then rerun the quick setup command to retry installation."
+    done < <(awk -F '"' '
+        /^[[:space:]]*mas "/ {
+            name=$2
+            if (match($3, /id:[[:space:]]*[0-9]+/)) {
+                id=substr($3, RSTART, RLENGTH)
+                sub(/id:[[:space:]]*/, "", id)
+                print id "\t" name
+            }
+        }
+    ' "$HOME/.Brewfile")
 }
 
 print_install_summary() {
@@ -418,14 +481,20 @@ print_install_summary() {
     if [[ "$MINIMAL_MODE" == "true" ]]; then
         summary_ok "Full Homebrew bundle skipped for minimal setup"
     elif command -v brew >/dev/null 2>&1 && [[ -f "$HOME/.Brewfile" ]]; then
+        if [[ "$PACKAGES_STATUS" -ne 0 ]]; then
+            summary_warn "Package reconciliation encountered an error; review the output above"
+        fi
         if brew bundle check --global --no-upgrade --quiet >/dev/null 2>&1; then
             summary_ok "Homebrew bundle satisfied"
         else
-            summary_warn "Homebrew bundle still has missing or outdated items"
+            summary_warn "Homebrew bundle still has missing items"
+            PACKAGES_STATUS=1
         fi
     else
         summary_warn "Homebrew bundle could not be checked"
     fi
+
+    print_app_store_summary
 
     if command -v gh >/dev/null 2>&1; then
         if gh auth status >/dev/null 2>&1; then
@@ -456,6 +525,10 @@ print_install_summary() {
 if [[ "$OSTYPE" != "darwin"* ]]; then
     log_error "This script is only for macOS"
 fi
+
+# The bootstrap owns package reconciliation on every run, including when chezmoi
+# has already consumed the onchange hook. Other preference hooks still run.
+export MAC_DOTFILES_BOOTSTRAP_PACKAGES=1
 
 require_command curl
 ensure_brew_in_path
@@ -618,8 +691,14 @@ if [[ "$PROFILE_SET" -eq 1 && -x "$PROFILE_SCRIPT" ]]; then
     fi
 fi
 
+reconcile_packages
+
 echo ""
-echo -e "${GREEN}✨ Setup completed successfully!${NC}"
+if [[ "$PACKAGES_STATUS" -eq 0 ]]; then
+    echo -e "${GREEN}✨ Dotfiles setup completed!${NC}"
+else
+    log_warning "Dotfiles applied; some applications could not be installed"
+fi
 echo ""
 if [[ "$DOTFILES_APPLIED" == "true" ]]; then
     echo "Your dotfiles have been applied with chezmoi."
@@ -641,3 +720,5 @@ echo "  chezmoi apply    - Apply changes"
 echo "  mac-dotfiles.sh raw-update - Pull and apply directly (advanced)"
 echo "  chezmoi edit X   - Edit a dotfile"
 echo ""
+[[ -z "$PACKAGES_LOG" ]] || rm -f "$PACKAGES_LOG"
+exit "$PACKAGES_STATUS"
