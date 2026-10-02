@@ -113,7 +113,7 @@ Some macOS apps can still require manual approval or an administrator password d
 
 ## 🧭 Declarative Profiles and Convergence
 
-The active profile is stored per Mac in the chezmoi configuration. Available profiles are:
+The active profile is stored per Mac in the chezmoi configuration. `profiles/catalog.json` defines each profile's description and ordered Brewfile components; both chezmoi and the convergence engine read this catalog. Available profiles are:
 
 - `minimal`: bootstrap essentials only
 - `personal`: personal applications and power-user CLI tools
@@ -471,6 +471,7 @@ brew bundle --global --verbose
 ```
 
 - `dot_Brewfile.tmpl` - Profile-aware template rendered to `~/.Brewfile`
+- `profiles/catalog.json` - Ordered profile definitions and descriptions shared by chezmoi and the convergence engine
 - `profiles/*.Brewfile` - Composable desired package sets
 - `dot_gitconfig.tmpl` - Git configuration template
 - `dot_zprofile` - Shell profile that enables Homebrew and `~/.local/bin`

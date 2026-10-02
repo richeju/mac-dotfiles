@@ -7,7 +7,7 @@ SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
 TRANSACTIONS_DIR="$STATE_DIR/transactions"
 LOCK_DIR="$STATE_DIR/operation.lock"
 REPORT_SCRIPT="$HOME/.local/bin/mac-dotfiles-report.sh"
-SUPPORTED_PROFILES="minimal personal developer gaming full"
+PROFILE_CATALOG="$SOURCE_DIR/profiles/catalog.json"
 PROFILE=""
 ASSUME_YES=0
 DRY_RUN=0
@@ -59,16 +59,32 @@ require_command() {
     command_exists "$1" || die "Required command '$1' is missing"
 }
 
-is_supported_profile() {
-    local candidate="$1" item
-    for item in $SUPPORTED_PROFILES; do
-        [[ "$candidate" == "$item" ]] && return 0
-    done
-    return 1
+require_profile_catalog() {
+    require_command jq
+    [[ -f "$PROFILE_CATALOG" ]] || die "Profile catalog is missing: $PROFILE_CATALOG"
+    jq -e '
+        .schema_version == 1 and
+        (.profiles | type == "array" and length > 0) and
+        all(.profiles[];
+            (.name | type == "string" and test("^[a-z][a-z0-9-]*$")) and
+            (.description | type == "string" and length > 0) and
+            (.components | type == "array" and length > 0 and length == (unique | length)) and
+            all(.components[]; type == "string" and test("^[a-z][a-z0-9-]*$"))
+        ) and
+        (.profiles | map(.name) | length == (unique | length)) and
+        any(.profiles[]; .name == "full")
+    ' "$PROFILE_CATALOG" >/dev/null 2>&1 || die "Invalid profile catalog: $PROFILE_CATALOG"
+}
+
+supported_profiles() {
+    require_profile_catalog
+    jq -r '.profiles[].name' "$PROFILE_CATALOG"
 }
 
 require_profile() {
-    is_supported_profile "$1" || die "Unknown profile '$1' (expected: $SUPPORTED_PROFILES)"
+    require_profile_catalog
+    jq -e --arg name "$1" 'any(.profiles[]; .name == $name)' "$PROFILE_CATALOG" >/dev/null ||
+        die "Unknown profile '$1' (expected: $(supported_profiles | tr '\n' ' '))"
 }
 
 config_file() {
@@ -105,13 +121,7 @@ current_profile() {
 }
 
 profile_description() {
-    case "$1" in
-        minimal) echo "Bootstrap essentials only" ;;
-        personal) echo "Daily personal applications and power CLI tools" ;;
-        developer) echo "Personal profile plus Go and Python toolchains" ;;
-        gaming) echo "Personal profile plus gaming applications" ;;
-        full) echo "Personal profile plus gaming applications" ;;
-    esac
+    jq -r --arg name "$1" '.profiles[] | select(.name == $name) | .description' "$PROFILE_CATALOG"
 }
 
 migrator_path() {
@@ -131,21 +141,14 @@ profile_component() {
 }
 
 render_profile() {
-    local profile="$1"
+    local profile="$1" component components
     require_profile "$profile"
+    components="$(jq -r --arg name "$profile" '.profiles[] | select(.name == $name) | .components[]' "$PROFILE_CATALOG")"
 
     echo "# Generated profile: $profile"
-    profile_component core
-    if [[ "$profile" != "minimal" ]]; then
-        profile_component power
-    fi
-    case "$profile" in
-        personal | developer | gaming | full) profile_component personal ;;
-    esac
-    [[ "$profile" == "developer" ]] && profile_component developer
-    case "$profile" in
-        gaming | full) profile_component gaming ;;
-    esac
+    while IFS= read -r component; do
+        profile_component "$component"
+    done <<<"$components"
 }
 
 set_profile() {
@@ -227,13 +230,14 @@ profile_command() {
 
     case "$action" in
         list)
-            local item active marker
+            local item active marker names
+            names="$(supported_profiles)" || return $?
             active="$(current_profile)"
-            for item in $SUPPORTED_PROFILES; do
+            while IFS= read -r item; do
                 marker=""
                 [[ "$item" == "$active" ]] && marker=" (active)"
                 printf '%-10s %s%s\n' "$item" "$(profile_description "$item")" "$marker"
-            done
+            done <<<"$names"
             ;;
         current)
             current_profile

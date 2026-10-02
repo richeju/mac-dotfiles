@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "profiles": [
+    {
+      "name": "minimal",
+      "description": "Bootstrap essentials only",
+      "components": ["core"]
+    },
+    {
+      "name": "personal",
+      "description": "Daily personal applications and power CLI tools",
+      "components": ["core", "power", "personal"]
+    },
+    {
+      "name": "developer",
+      "description": "Personal profile plus Go and Python toolchains",
+      "components": ["core", "power", "personal", "developer"]
+    },
+    {
+      "name": "gaming",
+      "description": "Personal profile plus gaming applications",
+      "components": ["core", "power", "personal", "gaming"]
+    },
+    {
+      "name": "full",
+      "description": "Personal profile plus gaming applications",
+      "components": ["core", "power", "personal", "gaming"]
+    }
+  ]
+}

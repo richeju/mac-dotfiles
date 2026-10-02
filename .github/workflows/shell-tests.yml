@@ -62,8 +62,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install age
-        run: brew install age
+      - name: Install age and chezmoi
+        run: brew install age chezmoi
 
       - name: Validate shell behavior
         run: bash tests/test_suite.sh

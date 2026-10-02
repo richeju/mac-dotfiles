@@ -4,7 +4,7 @@
 # dot_Brewfile.tmpl is rendered by chezmoi as ~/.Brewfile.
 
 # Profile: {{ index . "profile" | default "full" }}
-# Hashes: {{ include "dot_Brewfile.tmpl" | sha256sum }} {{ include "profiles/core.Brewfile" | sha256sum }} {{ include "profiles/power.Brewfile" | sha256sum }} {{ include "profiles/personal.Brewfile" | sha256sum }} {{ include "profiles/developer.Brewfile" | sha256sum }} {{ include "profiles/gaming.Brewfile" | sha256sum }}
+# Manifest SHA-256: {{ includeTemplate "dot_Brewfile.tmpl" . | sha256sum }}
 set -euo pipefail
 
 if [[ "${MAC_DOTFILES_ORCHESTRATED:-0}" == "1" ]]; then

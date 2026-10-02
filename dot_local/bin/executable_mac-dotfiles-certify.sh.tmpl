@@ -82,16 +82,18 @@ run_check() {
 }
 
 check_profiles() {
-    local profile manifest duplicates
+    local profile manifest duplicates names count=0
     [[ -x "$ENGINE" || -f "$ENGINE" ]] || return 1
-    for profile in minimal personal developer gaming full; do
+    names="$(CHEZMOI_SOURCE_DIR="$SOURCE_DIR" bash "$ENGINE" profile list)" || return 1
+    while read -r profile _; do
         manifest="$TMP_DIR/$profile.Brewfile"
         CHEZMOI_SOURCE_DIR="$SOURCE_DIR" bash "$ENGINE" profile show "$profile" >"$manifest"
         grep -Eq '^(brew|cask) "' "$manifest" || return 1
         duplicates="$(awk '/^(brew|cask) "/ {key=$1 ":" $2; gsub(/"/, "", key); print key}' "$manifest" | sort | uniq -d)"
         [[ -z "$duplicates" ]] || return 1
-    done
-    echo "5 profiles rendered without duplicate entries"
+        count=$((count + 1))
+    done <<<"$names"
+    echo "$count profiles rendered without duplicate entries"
 }
 
 check_migration_catalog() {

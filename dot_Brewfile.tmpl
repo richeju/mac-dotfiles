@@ -1,15 +1,20 @@
 {{- $profile := index . "profile" | default "full" -}}
+{{- $catalog := include "profiles/catalog.json" | fromJson -}}
+{{- if ne (int $catalog.schema_version) 1 -}}{{- fail "Invalid profile catalog schema version" -}}{{- end -}}
+{{- $selected := dict -}}
+{{- range $catalog.profiles -}}
+{{- if eq .name $profile -}}
+{{- if $selected -}}{{- fail (printf "Duplicate profile '%s'" $profile) -}}{{- end -}}
+{{- $selected = . -}}
+{{- end -}}
+{{- end -}}
+{{- if not $selected -}}{{- fail (printf "Unknown profile '%s'" $profile) -}}{{- end -}}
+{{- if not $selected.components -}}{{- fail "Profile has no components" -}}{{- end -}}
+{{- $seen := dict -}}
+{{- range $selected.components -}}
+{{- if not (regexMatch "^[a-z][a-z0-9-]*$" .) -}}{{- fail "Invalid profile component name" -}}{{- end -}}
+{{- if hasKey $seen . -}}{{- fail "Duplicate profile component" -}}{{- end -}}
+{{- $_ := set $seen . true -}}
+{{- end -}}
 # Generated profile: {{ $profile }}
-{{ include "profiles/core.Brewfile" -}}
-{{- if ne $profile "minimal" }}
-{{ include "profiles/power.Brewfile" -}}
-{{- end }}
-{{- if or (eq $profile "personal") (eq $profile "developer") (eq $profile "gaming") (eq $profile "full") }}
-{{ include "profiles/personal.Brewfile" -}}
-{{- end }}
-{{- if eq $profile "developer" }}
-{{ include "profiles/developer.Brewfile" -}}
-{{- end }}
-{{- if or (eq $profile "gaming") (eq $profile "full") }}
-{{ include "profiles/gaming.Brewfile" -}}
-{{- end }}
+{{ range $selected.components }}{{ include (printf "profiles/%s.Brewfile" .) }}{{ "\n" }}{{ end -}}

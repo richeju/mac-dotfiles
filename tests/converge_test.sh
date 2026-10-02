@@ -19,6 +19,7 @@ setup_env() {
     mkdir -p "$root/home/.config/chezmoi" "$root/home/.local/state/mac-dotfiles" \
         "$root/home/.local/bin" "$root/source/profiles" "$root/bin"
     cp "$REPO_ROOT"/profiles/*.Brewfile "$root/source/profiles/"
+    cp "$REPO_ROOT/profiles/catalog.json" "$root/source/profiles/"
     cat >"$root/home/.config/chezmoi/chezmoi.toml" <<'CONFIG'
 [data]
 name = "Test"
