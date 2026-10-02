@@ -308,7 +308,6 @@ start_sudo_keepalive() {
     SUDO_KEEPALIVE_PID=$!
 }
 
-# shellcheck disable=SC2329 # Invoked by the EXIT trap after sudo initialization.
 stop_sudo_keepalive() {
     if [[ -n "${SUDO_KEEPALIVE_PID}" ]]; then
         kill "${SUDO_KEEPALIVE_PID}" &>/dev/null || true
@@ -721,4 +720,6 @@ echo "  mac-dotfiles.sh raw-update - Pull and apply directly (advanced)"
 echo "  chezmoi edit X   - Edit a dotfile"
 echo ""
 [[ -z "$PACKAGES_LOG" ]] || rm -f "$PACKAGES_LOG"
-exit "$PACKAGES_STATUS"
+if [[ "$PACKAGES_STATUS" -ne 0 ]]; then
+    exit "$PACKAGES_STATUS"
+fi
