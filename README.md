@@ -80,6 +80,7 @@ Some macOS apps can still require manual approval or an administrator password d
 - **Git**, **curl**, and **zsh**: macOS bootstrap tools
 
 ### Applications (via Brewfile)
+- **Amazon Kindle**: Ebook reader, installed from the [Mac App Store](https://apps.apple.com/app/id302584613) via `mas` (requires App Store sign-in)
 - **balenaEtcher**: Bootable USB and SD-card image writer
 - **VLC**: Media player
 - **NVIDIA GeForce NOW**: Cloud gaming platform
