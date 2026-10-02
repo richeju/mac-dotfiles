@@ -2,7 +2,17 @@
 
 Automatic installation and configuration script for new macOS setup using [chezmoi](https://www.chezmoi.io/)
 
-## 🚀 Reproducible Setup
+## 🚀 Quick Setup
+
+On a new Mac or an existing setup, run this command to apply the latest version from `main` and install the applications for your active profile:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash
+```
+
+Kindle is installed through the Mac App Store and requires App Store sign-in.
+
+### Reproducible Setup (optional)
 
 On a new Mac, an already configured Mac, or a machine that needs repair, download and verify the reviewed bootstrap:
 
@@ -15,7 +25,7 @@ echo "$INSTALL_SHA256  /tmp/mac-dotfiles-install.sh" | shasum -a 256 -c -
 MAC_DOTFILES_REF="$DOTFILES_REF" bash /tmp/mac-dotfiles-install.sh
 ```
 
-This is the stable entrypoint. It verifies the installer before execution and applies exactly the reviewed commit before restoring the chezmoi source to its normal tracking branch. It installs missing prerequisites, initializes or updates chezmoi, applies managed files non-interactively, repairs missing managed helpers, and then exits.
+This optional procedure verifies the installer before execution and applies exactly the pinned commit before restoring the chezmoi source to its normal tracking branch. Rerunning it restores that version rather than the latest changes on `main`. It installs missing prerequisites, initializes or updates chezmoi, applies managed files non-interactively, repairs missing managed helpers, and then exits.
 
 When Homebrew is already installed, the installer does not request administrator privileges. A password may still be required on a fresh Mac if Homebrew or macOS command line tools need to be installed.
 
@@ -26,8 +36,6 @@ Inspect the verified script before executing it if desired:
 less /tmp/mac-dotfiles-install.sh
 MAC_DOTFILES_REF="$DOTFILES_REF" bash /tmp/mac-dotfiles-install.sh
 ```
-
-The shorter `curl .../main/install.sh | bash` form follows a mutable development channel and is intentionally not the recommended bootstrap.
 
 Zero-interaction mode (for full automation):
 ```bash
