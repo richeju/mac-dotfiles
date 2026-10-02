@@ -3,6 +3,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/shell_sources.sh
+source "$REPO_ROOT/tests/lib/shell_sources.sh"
 
 validate_chezmoi_source_names() {
     local path
@@ -32,18 +34,10 @@ validate_repo_files_are_ignored() {
 validate_script() {
     local script="$1"
 
-    if [[ "$script" == *.tmpl ]] && grep -q '{{' "$script"; then
-        if ! sed -E \
-            -e '/^[[:space:]]*\{\{.*\}\}[[:space:]]*$/d' \
-            -e 's/\{\{[^}]*\}\}/template_value/g' \
-            "$script" | bash -n; then
-            echo "Shell syntax validation failed: $script" >&2
-            return 1
-        fi
-        return
+    if ! prepare_shell_source "$script" | bash -n; then
+        echo "Shell syntax validation failed: $script" >&2
+        return 1
     fi
-
-    bash -n "$script"
 }
 
 validate_shell_syntax() {

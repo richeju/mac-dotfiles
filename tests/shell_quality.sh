@@ -3,6 +3,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib/shell_sources.sh
+source "$REPO_ROOT/tests/lib/shell_sources.sh"
 MODE="${1:-all}"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-shell-quality.XXXXXX")"
 trap 'rm -rf "$WORK_DIR"' EXIT
@@ -33,10 +35,7 @@ check_script() {
     if [[ "$source" == *.tmpl ]] && grep -q '{{' "$source"; then
         safe_name="${relative//\//_}"
         candidate="$WORK_DIR/${safe_name%.tmpl}"
-        sed -E \
-            -e '/^[[:space:]]*\{\{.*\}\}[[:space:]]*$/d' \
-            -e 's/\{\{[^}]*\}\}/template_value/g' \
-            "$source" >"$candidate"
+        prepare_shell_source "$source" >"$candidate"
     fi
 
     if [[ "$MODE" == "all" || "$MODE" == "shellcheck" ]]; then

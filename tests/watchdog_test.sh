@@ -36,7 +36,8 @@ if [[ "$1" == "-f" ]]; then
   exit 1
 fi
 if [[ "$1" == "-c" ]]; then
-  echo "$MAC_DOTFILES_WATCHDOG_NOW"
+  [[ "${WATCHDOG_TEST_STAT_FAILURE:-0}" != "1" ]] || exit 1
+  echo "$((MAC_DOTFILES_WATCHDOG_NOW - ${WATCHDOG_TEST_AGE:-0}))"
 fi
 STAT
     chmod +x "$root/home/.local/bin/mac-dotfiles-converge.sh" "$root/bin/git" "$root/bin/osascript" "$root/bin/stat"
@@ -154,10 +155,37 @@ test_manual_notification() {
     grep -Fq 'mac-dotfiles — warning' "$root/notifications.log" || fail "test command should send the requested notification"
 }
 
+test_freshness_boundaries() {
+    local root now age expected
+    root="$(mktemp -d)"
+    now="$(date '+%s')"
+    setup_env "$root" "$now"
+
+    for age in 59 60 61; do
+        expected=healthy
+        [[ "$age" -le 60 ]] || expected=warning
+        WATCHDOG_TEST_AGE="$age" \
+            MAC_DOTFILES_CERTIFICATION_MAX_AGE_SECONDS=60 \
+            MAC_DOTFILES_SNAPSHOT_MAX_AGE_SECONDS=60 \
+            MAC_DOTFILES_MAINTENANCE_MAX_AGE_SECONDS=60 \
+            run_watchdog "$root" "$now" run --no-notify >/dev/null
+        jq -e --arg expected "$expected" \
+            '[.checks[] | select(.name == "certification" or .name == "recovery-snapshot" or .name == "maintenance")] | length == 3 and all(.status == $expected)' \
+            "$root/state/watchdog/state.json" >/dev/null || fail "freshness threshold changed at age $age"
+    done
+
+    WATCHDOG_TEST_STAT_FAILURE=1 run_watchdog "$root" "$now" run --no-notify >/dev/null
+    jq -e \
+        '[.checks[] | select(.name == "certification" or .name == "recovery-snapshot" or .name == "maintenance")] | length == 3 and all(.status == "warning" and (.detail | endswith("age is unavailable")))' \
+        "$root/state/watchdog/state.json" >/dev/null || fail "unavailable timestamps should produce explicit warnings"
+    rm -rf "$root"
+}
+
 test_transitions_and_cooldown
 test_stale_certification_commit_warns
 test_persisted_maintenance_failure_survives_manual_run
 test_rejected_certified_update_is_critical
 test_nist_findings_are_advisory
 test_manual_notification
+test_freshness_boundaries
 echo "[PASS] watchdog tests completed"

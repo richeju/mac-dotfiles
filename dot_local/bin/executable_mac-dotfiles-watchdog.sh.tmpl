@@ -67,6 +67,20 @@ record_check() {
         '{name:$name,status:$status,detail:$detail}' >>"$CHECKS_FILE"
 }
 
+check_freshness() {
+    local name="$1" path="$2" max_age="$3"
+    local unavailable="$4" stale="$5" healthy="$6" age
+    age="$(age_seconds "$path")" || {
+        record_check "$name" warning "$unavailable"
+        return
+    }
+    if ((age > max_age)); then
+        record_check "$name" warning "$stale"
+    else
+        record_check "$name" healthy "$healthy"
+    fi
+}
+
 check_desired_state() {
     local plan
     if [[ ! -x "$CONVERGE_SCRIPT" ]]; then
@@ -83,7 +97,7 @@ check_desired_state() {
 }
 
 check_certification() {
-    local age overall attested_commit current_commit
+    local overall attested_commit current_commit
     if [[ ! -f "$CERTIFICATION_FILE" ]]; then
         record_check certification warning "no certification attestation found"
         return
@@ -108,15 +122,10 @@ check_certification() {
         record_check certification warning "certification does not match current commit"
         return
     fi
-    age="$(age_seconds "$CERTIFICATION_FILE")" || {
-        record_check certification warning "certification age is unavailable"
-        return
-    }
-    if ((age > CERTIFICATION_MAX_AGE)); then
-        record_check certification warning "certification is older than $((CERTIFICATION_MAX_AGE / 86400)) days"
-    else
-        record_check certification healthy "latest certification passed"
-    fi
+    check_freshness certification "$CERTIFICATION_FILE" "$CERTIFICATION_MAX_AGE" \
+        "certification age is unavailable" \
+        "certification is older than $((CERTIFICATION_MAX_AGE / 86400)) days" \
+        "latest certification passed"
 }
 
 check_certified_update() {
@@ -188,25 +197,20 @@ latest_snapshot() {
 }
 
 check_recovery_snapshot() {
-    local snapshot age
+    local snapshot
     snapshot="$(latest_snapshot || true)"
     if [[ -z "$snapshot" ]]; then
         record_check recovery-snapshot warning "no recovery snapshot found"
         return
     fi
-    age="$(age_seconds "$snapshot")" || {
-        record_check recovery-snapshot warning "snapshot age is unavailable"
-        return
-    }
-    if ((age > SNAPSHOT_MAX_AGE)); then
-        record_check recovery-snapshot warning "latest snapshot is older than $((SNAPSHOT_MAX_AGE / 86400)) days"
-    else
-        record_check recovery-snapshot healthy "recovery snapshot is recent"
-    fi
+    check_freshness recovery-snapshot "$snapshot" "$SNAPSHOT_MAX_AGE" \
+        "snapshot age is unavailable" \
+        "latest snapshot is older than $((SNAPSHOT_MAX_AGE / 86400)) days" \
+        "recovery snapshot is recent"
 }
 
 check_maintenance() {
-    local age exit_status="${MAC_DOTFILES_MAINTENANCE_EXIT_STATUS:-}" freshness_file="$MAINTENANCE_LOG"
+    local exit_status="${MAC_DOTFILES_MAINTENANCE_EXIT_STATUS:-}" freshness_file="$MAINTENANCE_LOG"
     if [[ -z "$exit_status" && -f "$MAINTENANCE_STATUS_FILE" ]]; then
         if ! jq -e '.schema_version == 1 and (.exit_status | type == "number")' "$MAINTENANCE_STATUS_FILE" >/dev/null 2>&1; then
             record_check maintenance critical "persisted maintenance status is invalid"
@@ -234,15 +238,10 @@ check_maintenance() {
         record_check maintenance warning "maintenance has not produced a log"
         return
     fi
-    age="$(age_seconds "$freshness_file")" || {
-        record_check maintenance warning "maintenance age is unavailable"
-        return
-    }
-    if ((age > MAINTENANCE_MAX_AGE)); then
-        record_check maintenance warning "maintenance has not run in $((MAINTENANCE_MAX_AGE / 86400)) days"
-    else
-        record_check maintenance healthy "maintenance log is recent"
-    fi
+    check_freshness maintenance "$freshness_file" "$MAINTENANCE_MAX_AGE" \
+        "maintenance age is unavailable" \
+        "maintenance has not run in $((MAINTENANCE_MAX_AGE / 86400)) days" \
+        "maintenance log is recent"
 }
 
 overall_status() {

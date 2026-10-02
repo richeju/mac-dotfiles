@@ -476,6 +476,7 @@ brew bundle --global --verbose
 - `doctor.sh` - Health check script for dependencies and dotfile status
 - `lib/doctor_output.sh` - JSON, Markdown, and explanation renderers used by the health check
 - `tests/test_suite.sh` - Syntax validation and entry point for the complete shell test suite
+- `tests/lib/shell_sources.sh` - Shared template preparation for syntax, ShellCheck, and formatting checks
 - `compliance/personal-nist-low.json` - Versioned, audit-only NIST/mSCP tailoring for a personal Mac
 - `migrations/*.sh` - Ordered, idempotent repository schema migrations
 - `dot_local/bin/executable_mac-dotfiles.sh.tmpl` - Compact launcher/menu for common workflows
