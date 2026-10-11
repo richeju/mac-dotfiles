@@ -1,5 +1,7 @@
-{{- $name := index . "name" | default (env "GIT_NAME") | default (promptStringOnce . "name" "Full name") -}}
-{{- $email := index . "email" | default (env "GIT_EMAIL") | default (promptStringOnce . "email" "Email address") -}}
+{{- $name := index . "name" | default (env "GIT_NAME") -}}
+{{- if not $name -}}{{- $name = promptStringOnce . "name" "Full name" -}}{{- end -}}
+{{- $email := index . "email" | default (env "GIT_EMAIL") -}}
+{{- if not $email -}}{{- $email = promptStringOnce . "email" "Email address" -}}{{- end -}}
 {{- $profile := env "MAC_DOTFILES_PROFILE" | default (index . "profile") | default "full" -}}
 
 [data]

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Reload when the managed LaunchAgent definition changes.
-# Hash: {{ include "dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl" | sha256sum }}
+# Hash: {{ include "Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl" | sha256sum }}
 set -euo pipefail
 
 if [[ "${MAC_DOTFILES_ORCHESTRATED:-0}" == "1" ]]; then

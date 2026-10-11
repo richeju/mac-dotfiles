@@ -15,7 +15,7 @@ grep -Fq 'brew "node@24"' "$REPO_ROOT/profiles/power.Brewfile" || fail "Node LTS
 grep -Fq 'cask "balenaetcher"' "$REPO_ROOT/profiles/personal.Brewfile" || fail "personal profile must include the bootable USB writer"
 grep -Fq 'cask "zerotier-one"' "$REPO_ROOT/profiles/personal.Brewfile" || fail "personal profile must include the mesh VPN client"
 grep -Fq '/opt/homebrew/opt/node@24/bin' "$REPO_ROOT/dot_zprofile" || fail "Node LTS must be added to PATH"
-grep -Fq '/opt/homebrew/bin' "$REPO_ROOT/dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl" || fail "LaunchAgent must include Homebrew in PATH"
+grep -Fq '/opt/homebrew/bin' "$REPO_ROOT/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl" || fail "LaunchAgent must include Homebrew in PATH"
 grep -Fq 'cced90146ea6d3057c03a636b668fef177415eb3' "$REPO_ROOT/install.sh" ||
     fail "Homebrew installer must be pinned to a commit"
 grep -Fq '12479a24be3f5307eecac7cde670fad7118640f031229e964f544b1367b52a41' "$REPO_ROOT/install.sh" ||

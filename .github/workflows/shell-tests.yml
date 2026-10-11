@@ -75,7 +75,7 @@ jobs:
             -e 's/{{ .chezmoi.homeDir }}/\/Users\/runner/g' \
             -e 's/{{ $hour }}/4/g' \
             -e 's/{{ $minute }}/0/g' \
-            dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl > /tmp/maintenance.plist
+            Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl > /tmp/maintenance.plist
           plutil -lint /tmp/maintenance.plist
 
       - name: Generate certification attestation

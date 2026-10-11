@@ -479,6 +479,7 @@ brew bundle --global --verbose
 - `doctor.sh` - Health check script for dependencies and dotfile status
 - `lib/doctor_output.sh` - JSON, Markdown, and explanation renderers used by the health check
 - `tests/test_suite.sh` - Syntax validation and entry point for the complete shell test suite
+- `tests/bootstrap_e2e_test.sh` - macOS integration test using real chezmoi and a local Git remote, with an isolated home and simulated package/system commands; covers first install, idempotence, missing-app repair, and App Store failure/retry
 - `tests/lib/shell_sources.sh` - Shared template preparation for syntax, ShellCheck, and formatting checks
 - `compliance/personal-nist-low.json` - Versioned, audit-only NIST/mSCP tailoring for a personal Mac
 - `migrations/*.sh` - Ordered, idempotent repository schema migrations
@@ -504,7 +505,7 @@ brew bundle --global --verbose
 - `dot_local/bin/executable_mac-dotfiles-safe-update.sh.tmpl` - Safe update wrapper with before/after reports, backups, and saved diff
 - `dot_local/bin/executable_mac-dotfiles-rollback.sh.tmpl` - Confirmed or dry-run restoration from safe-update backups
 - `dot_local/bin/executable_mac-dotfiles-history.sh.tmpl` - Backup history listing and retention cleanup
-- `dot_Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl` - LaunchAgent scheduled daily at 04:00
+- `Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist.tmpl` - LaunchAgent scheduled daily at 04:00
 - `run_onchange_enable-maintenance-launchagent-darwin.sh.tmpl` - Validates and reloads the LaunchAgent whenever its definition changes
 
 
