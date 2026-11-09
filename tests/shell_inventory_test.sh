@@ -6,6 +6,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO_ROOT/tests/lib/shell_sources.sh"
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-sources-test.XXXXXX")"
 trap 'rm -rf "$WORK_DIR"' EXIT
+# macOS TMPDIR can end in / or use a symlink; compare canonical fixture paths.
+WORK_DIR="$(cd "$WORK_DIR" && pwd -P)"
 FIXTURE="$WORK_DIR/repo with spaces"
 mkdir -p "$FIXTURE/nested name" "$FIXTURE/skills" "$WORK_DIR/bin" "$WORK_DIR/not-a-repo"
 git -C "$FIXTURE" init -q
@@ -95,7 +97,11 @@ run_quality() {
 }
 
 : >"$WORK_DIR/quality-calls"
-run_quality all >"$WORK_DIR/quality-output"
+run_quality all >"$WORK_DIR/quality-output" || {
+    status=$?
+    cat "$WORK_DIR/quality-output" >&2
+    fail "Quality driver exited with status $status"
+}
 for path in 'tracked file.sh' $'line\nbreak.sh' 'back\slash.sh' '.hidden.sh'; do
     assert_path_count "$WORK_DIR/quality-calls" "$FIXTURE/$path" 2
 done
