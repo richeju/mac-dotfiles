@@ -31,10 +31,10 @@ if [[ "$MODE" == "all" || "$MODE" == "shfmt" ]]; then
 fi
 
 check_script() {
-    local source="$1" candidate="$1" relative="$2" safe_name
+    local source="$1" candidate="$1" relative="$2"
     if [[ "$source" == *.tmpl ]] && grep -q '{{' "$source"; then
-        safe_name="${relative//\//_}"
-        candidate="$WORK_DIR/${safe_name%.tmpl}"
+        candidate="$WORK_DIR/${relative%.tmpl}"
+        mkdir -p "$(dirname "$candidate")"
         prepare_shell_source "$source" >"$candidate"
     fi
 
@@ -46,12 +46,11 @@ check_script() {
     fi
 }
 
-git -C "$REPO_ROOT" ls-files --cached --others --exclude-standard | while IFS= read -r relative; do
-    [[ -e "$REPO_ROOT/$relative" ]] || continue
+list_shell_sources "$REPO_ROOT" | while IFS= read -r -d '' relative; do
     case "$relative" in
         skills/*) continue ;;
-        *.sh | *.sh.tmpl) check_script "$REPO_ROOT/$relative" "$relative" ;;
     esac
+    check_script "$REPO_ROOT/$relative" "$relative"
 done
 
 echo "[PASS] shell quality ($MODE)"

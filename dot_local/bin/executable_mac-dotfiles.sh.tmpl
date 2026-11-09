@@ -5,18 +5,6 @@ set -euo pipefail
 CHEZMOI_SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
 INSTALL_SCRIPT="$CHEZMOI_SOURCE_DIR/install.sh"
 DOCTOR_SCRIPT="$CHEZMOI_SOURCE_DIR/doctor.sh"
-REPORT_SCRIPT="$HOME/.local/bin/mac-dotfiles-report.sh"
-SAFE_UPDATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-safe-update.sh"
-CERTIFIED_UPDATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-certified-update.sh"
-COMPLIANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-compliance.sh"
-ROLLBACK_SCRIPT="$HOME/.local/bin/mac-dotfiles-rollback.sh"
-HISTORY_SCRIPT="$HOME/.local/bin/mac-dotfiles-history.sh"
-MAINTENANCE_SCRIPT="$HOME/.local/bin/mac-dotfiles-maintenance.sh"
-CONVERGE_SCRIPT="$HOME/.local/bin/mac-dotfiles-converge.sh"
-MIGRATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-migrate.sh"
-CERTIFY_SCRIPT="$HOME/.local/bin/mac-dotfiles-certify.sh"
-RECOVERY_SCRIPT="$HOME/.local/bin/mac-dotfiles-recovery.sh"
-WATCHDOG_SCRIPT="$HOME/.local/bin/mac-dotfiles-watchdog.sh"
 
 usage() {
     cat <<'USAGE'
@@ -66,28 +54,39 @@ run_if_executable() {
     "$path" "$@"
 }
 
-run_verify() {
-    run_if_executable "$INSTALL_SCRIPT" --verify
+# Helper names are internal; user arguments stay in "$@".
+run_managed_script() {
+    local name="$1"
+    shift
+    run_if_executable "$HOME/.local/bin/mac-dotfiles-$name.sh" "$@"
+}
+
+require_chezmoi() {
+    if ! command -v chezmoi >/dev/null 2>&1; then
+        echo "Missing command: chezmoi" >&2
+        return 1
+    fi
+}
+
+run_chezmoi() {
+    require_chezmoi
+    chezmoi "$@"
 }
 
 run_repair() {
     local report_target="${1:-$HOME/mac-dotfiles-repair-report.md}"
     local doctor_status=0
 
-    if ! command -v chezmoi >/dev/null 2>&1; then
-        echo "Missing command: chezmoi" >&2
-        return 1
-    fi
+    require_chezmoi
 
     echo "==> Running certified desired-state update"
-    run_certified_update run
+    run_managed_script certified-update run
 
     echo "==> Running doctor auto-fixes"
     run_if_executable "$DOCTOR_SCRIPT" --fix || doctor_status=$?
 
     echo "==> Writing repair report"
-    run_if_executable "$REPORT_SCRIPT" >"$report_target"
-    echo "Report written to $report_target"
+    run_report "$report_target"
 
     if [[ "$doctor_status" -ne 0 ]]; then
         echo "Doctor completed with warnings. Review the report for remaining manual steps." >&2
@@ -95,76 +94,20 @@ run_repair() {
     fi
 }
 
-run_safe_update() {
-    run_if_executable "$SAFE_UPDATE_SCRIPT" "$@"
-}
-
-run_certified_update() {
-    run_if_executable "$CERTIFIED_UPDATE_SCRIPT" "$@"
-}
-
-run_rollback() {
-    run_if_executable "$ROLLBACK_SCRIPT" "$@"
-}
-
-run_history() {
-    run_if_executable "$HISTORY_SCRIPT" "$@"
-}
-
-run_update() {
-    run_certified_update run
-}
-
-run_raw_update() {
-    if ! command -v chezmoi >/dev/null 2>&1; then
-        echo "Missing command: chezmoi" >&2
-        return 1
-    fi
-
-    chezmoi update --apply
-}
-
 run_report() {
     local target="${1:-$HOME/mac-dotfiles-report.md}"
-    run_if_executable "$REPORT_SCRIPT" >"$target"
+    run_managed_script report >"$target"
     echo "Report written to $target"
-}
-
-run_doctor() {
-    run_if_executable "$DOCTOR_SCRIPT" "$@"
-}
-
-run_explain() {
-    run_if_executable "$DOCTOR_SCRIPT" --explain
-}
-
-run_maintenance() {
-    run_if_executable "$MAINTENANCE_SCRIPT" "$@"
-}
-
-run_diff() {
-    if ! command -v chezmoi >/dev/null 2>&1; then
-        echo "Missing command: chezmoi" >&2
-        return 1
-    fi
-
-    chezmoi diff
-}
-
-run_convergence_command() {
-    local command="$1"
-    shift
-    run_if_executable "$CONVERGE_SCRIPT" "$command" "$@"
 }
 
 run_profile_menu() {
     local profile
-    run_convergence_command profile list
+    dispatch_command profile list
     echo
     printf "New profile (leave empty to keep current): "
     IFS= read -r profile
     [[ -z "$profile" ]] && return 0
-    run_convergence_command profile set "$profile"
+    dispatch_command profile set "$profile"
 }
 
 show_menu() {
@@ -206,26 +149,26 @@ run_menu() {
         echo
 
         case "$choice" in
-            1) run_verify ;;
-            2) run_repair ;;
-            3) run_safe_update ;;
-            4) run_rollback ;;
-            5) run_history ;;
-            6) run_certified_update run ;;
-            7) run_report ;;
-            8) run_doctor ;;
-            9) run_explain ;;
-            10) run_maintenance ;;
-            11) run_diff ;;
-            12) run_convergence_command plan ;;
-            13) run_convergence_command drift || true ;;
-            14) run_convergence_command converge ;;
+            1) dispatch_command verify ;;
+            2) dispatch_command repair ;;
+            3) dispatch_command safe-update ;;
+            4) dispatch_command rollback ;;
+            5) dispatch_command history ;;
+            6) dispatch_command update ;;
+            7) dispatch_command report ;;
+            8) dispatch_command doctor ;;
+            9) dispatch_command explain ;;
+            10) dispatch_command maintenance ;;
+            11) dispatch_command diff ;;
+            12) dispatch_command plan ;;
+            13) dispatch_command drift || true ;;
+            14) dispatch_command converge ;;
             15) run_profile_menu ;;
-            16) run_if_executable "$MIGRATE_SCRIPT" plan ;;
-            17) run_if_executable "$CERTIFY_SCRIPT" ;;
-            18) run_if_executable "$RECOVERY_SCRIPT" list ;;
-            19) run_if_executable "$WATCHDOG_SCRIPT" status ;;
-            20) run_if_executable "$COMPLIANCE_SCRIPT" audit ;;
+            16) dispatch_command migrate plan ;;
+            17) dispatch_command certify ;;
+            18) dispatch_command recovery list ;;
+            19) dispatch_command status ;;
+            20) dispatch_command compliance audit ;;
             0 | q | quit | exit)
                 echo "Bye."
                 return 0
@@ -240,41 +183,37 @@ run_menu() {
     done
 }
 
-command="${1:-menu}"
-shift || true
+# Keep one routing table for CLI calls and interactive menu actions.
+dispatch_command() {
+    local command="${1:-menu}"
+    shift || true
 
-case "$command" in
-    menu) run_menu ;;
-    verify) run_verify "$@" ;;
-    repair | reconcile) run_repair "$@" ;;
-    safe-update) run_safe_update "$@" ;;
-    certified-update) run_certified_update "$@" ;;
-    compliance) run_if_executable "$COMPLIANCE_SCRIPT" "$@" ;;
-    rollback) run_rollback "$@" ;;
-    history) run_history "$@" ;;
-    update) run_update "$@" ;;
-    raw-update) run_raw_update "$@" ;;
-    report) run_report "$@" ;;
-    doctor) run_doctor "$@" ;;
-    explain) run_explain "$@" ;;
-    maintenance) run_maintenance "$@" ;;
-    diff) run_diff "$@" ;;
-    profile) run_convergence_command profile "$@" ;;
-    plan) run_convergence_command plan "$@" ;;
-    drift) run_convergence_command drift "$@" ;;
-    converge) run_convergence_command converge "$@" ;;
-    validate) run_convergence_command validate "$@" ;;
-    transactions) run_convergence_command transactions "$@" ;;
-    tx-rollback) run_convergence_command rollback "$@" ;;
-    migrate) run_if_executable "$MIGRATE_SCRIPT" "$@" ;;
-    certify) run_if_executable "$CERTIFY_SCRIPT" "$@" ;;
-    recovery) run_if_executable "$RECOVERY_SCRIPT" "$@" ;;
-    status) run_if_executable "$WATCHDOG_SCRIPT" status "$@" ;;
-    watch | watchdog) run_if_executable "$WATCHDOG_SCRIPT" "$@" ;;
-    help | -h | --help) usage ;;
-    *)
-        echo "Unknown command: $command" >&2
-        usage >&2
-        exit 2
-        ;;
-esac
+    case "$command" in
+        menu) run_menu ;;
+        verify) run_if_executable "$INSTALL_SCRIPT" --verify ;;
+        repair | reconcile) run_repair "$@" ;;
+        safe-update | certified-update | compliance | rollback | history | maintenance | migrate | certify | recovery)
+            run_managed_script "$command" "$@"
+            ;;
+        update) run_managed_script certified-update run ;;
+        raw-update) run_chezmoi update --apply ;;
+        report) run_report "$@" ;;
+        doctor) run_if_executable "$DOCTOR_SCRIPT" "$@" ;;
+        explain) run_if_executable "$DOCTOR_SCRIPT" --explain ;;
+        diff) run_chezmoi diff ;;
+        profile | plan | drift | converge | validate | transactions)
+            run_managed_script converge "$command" "$@"
+            ;;
+        tx-rollback) run_managed_script converge rollback "$@" ;;
+        status) run_managed_script watchdog status "$@" ;;
+        watch | watchdog) run_managed_script watchdog "$@" ;;
+        help | -h | --help) usage ;;
+        *)
+            echo "Unknown command: $command" >&2
+            usage >&2
+            return 2
+            ;;
+    esac
+}
+
+dispatch_command "$@"

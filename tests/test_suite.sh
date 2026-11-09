@@ -9,8 +9,7 @@ source "$REPO_ROOT/tests/lib/shell_sources.sh"
 validate_chezmoi_source_names() {
     local path
 
-    git -C "$REPO_ROOT" ls-files --cached --others --exclude-standard | while IFS= read -r path; do
-        [[ -e "$REPO_ROOT/$path" ]] || continue
+    list_repository_files "$REPO_ROOT" | while IFS= read -r -d '' path; do
         case "$path" in
             */run_*)
                 echo "Reserved chezmoi run_ prefix outside repository root: $path" >&2
@@ -43,13 +42,8 @@ validate_script() {
 validate_shell_syntax() {
     local script
 
-    git -C "$REPO_ROOT" ls-files --cached --others --exclude-standard | while IFS= read -r script; do
-        [[ -e "$REPO_ROOT/$script" ]] || continue
-        case "$script" in
-            *.sh | *.sh.tmpl)
-                validate_script "$REPO_ROOT/$script"
-                ;;
-        esac
+    list_shell_sources "$REPO_ROOT" | while IFS= read -r -d '' script; do
+        validate_script "$REPO_ROOT/$script"
     done
 }
 
