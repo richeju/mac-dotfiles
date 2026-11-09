@@ -95,6 +95,7 @@ Some macOS apps can still require manual approval or an administrator password d
 - **VLC**: Media player
 - **NVIDIA GeForce NOW**: Cloud gaming platform
 - **Discord**: Gaming communication
+- **Steam**: PC game client and storefront
 - **Bitwarden**: Password manager
 - **Dropbox**: Cloud storage
 - **Raycast**: Productivity launcher
