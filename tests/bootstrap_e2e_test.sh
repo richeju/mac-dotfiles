@@ -148,4 +148,39 @@ assert_install_count 4
 grep -Fq 'Amazon Kindle: installed (Mac App Store)' "$test_root/output" || fail "retry should report successful installation"
 cmp -s "$test_root/manifest-before" "$test_root/home/.Brewfile" || fail "repair should preserve the desired manifest"
 cmp -s "$test_root/hooks-before" "$test_root/commands.log" || fail "package repair should not rerun unchanged preference hooks"
-echo "[PASS] real chezmoi bootstrap integration completed (first install, idempotence, repair, App Store retry)"
+
+source_dir="$test_root/home/.local/share/chezmoi"
+git -C "$test_root/origin" branch retired
+git -C "$source_dir" fetch origin
+git -C "$source_dir" switch --track -c retired origin/retired
+git -C "$test_root/origin" branch -D retired
+# A deleted upstream must never cause local edits to be discarded.
+printf '\n# local edit\n' >>"$source_dir/README.md"
+cp "$source_dir/README.md" "$test_root/local-readme"
+run_bootstrap 1
+grep -Fq 'has local changes; refusing to switch branches' "$test_root/output" || fail "dirty deleted branch should explain refusal"
+cmp -s "$source_dir/README.md" "$test_root/local-readme" || fail "local edit was lost"
+[[ "$(git -C "$source_dir" branch --show-current)" == retired ]] || fail "dirty branch was switched"
+assert_install_count 4
+# Restore only the fixture edit, then exercise automatic upstream repair.
+cp "$test_root/origin/README.md" "$source_dir/README.md"
+run_bootstrap 0
+[[ "$(git -C "$source_dir" branch --show-current)" == main ]] || fail "missing upstream was not repaired"
+assert_install_count 4
+
+# A real failing chezmoi hook must propagate failure, not report success or
+# continue to package installation. A subsequent corrected commit must recover.
+printf '#!/bin/sh\necho e2e-hook-failed >&2\nexit 1\n' >"$test_root/origin/run_before_e2e-failure.sh"
+git -C "$test_root/origin" add .
+git -C "$test_root/origin" -c user.name=Test -c user.email=test@example.com -c commit.gpgsign=false commit -qm 'failing hook'
+run_bootstrap 1
+grep -Fq e2e-hook-failed "$test_root/output" || fail "real hook failure was not surfaced"
+if grep -Fq 'Dotfiles setup completed!' "$test_root/output"; then fail "failed apply reported success"; fi
+assert_install_count 4
+rm "$test_root/origin/run_before_e2e-failure.sh"
+git -C "$test_root/origin" add -u
+git -C "$test_root/origin" -c user.name=Test -c user.email=test@example.com -c commit.gpgsign=false commit -qm 'fix hook'
+run_bootstrap 0
+assert_install_count 4
+[[ "$(git -C "$source_dir" rev-parse HEAD)" == "$(git -C "$test_root/origin" rev-parse HEAD)" ]] || fail "retry did not apply corrected commit"
+echo "[PASS] real chezmoi bootstrap integration completed (installation, repair, App Store, deleted upstream, local edits, failed update and retry)"

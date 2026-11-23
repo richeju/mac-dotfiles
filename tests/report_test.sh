@@ -151,8 +151,30 @@ test_report_happy_path() {
     assert_contains "$output" "launchd-ok" "report should include launchd log"
 }
 
+test_redacted_report() {
+    local env_dir output status=0
+    env_dir="$(setup_env)"
+    write_mocks "$env_dir"
+    # Put private data in both logs and raw command output. Neither stream
+    # belongs in the allowlisted report, including on command failure.
+    printf '%s\n' 'private-person@example.com token-secret 172.24.30.116' >>"$env_dir/home/.local/state/mac-dotfiles/maintenance.log"
+    printf '#!/bin/sh\necho token-secret\necho private-person@example.com >&2\nexit 1\n' >"$env_dir/bin/brew"
+    output="$(HOME="$env_dir/home" PATH="$env_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin" bash "$REPORT_SCRIPT" --redact 2>&1)"
+    assert_contains "$output" '# mac-dotfiles report (redacted)' 'redacted title'
+    assert_contains "$output" '- Bundle: warning' 'failure should retain a useful status'
+    assert_contains "$output" '- GitHub auth: configured' 'authentication status should remain visible'
+    local forbidden
+    for forbidden in "$env_dir" test-mac private-person@example.com token-secret 172.24.30.116 maintenance-ok launchd-ok; do
+        [[ "$output" != *"$forbidden"* ]] || fail "redacted report leaked private content"
+    done
+    HOME="$env_dir/home" bash "$REPORT_SCRIPT" --unknown >/dev/null 2>&1 || status=$?
+    [[ "$status" -eq 2 ]] || fail 'unknown options must fail'
+    rm -rf "$env_dir"
+}
+
 main() {
     test_report_happy_path
+    test_redacted_report
     echo "[PASS] report tests completed"
 }
 

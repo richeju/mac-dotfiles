@@ -2,6 +2,70 @@
 
 set -euo pipefail
 
+# Shareable reports use a fixed vocabulary, not regex filtering of raw logs:
+# unknown secrets and arbitrary command errors must never pass through.
+case "${1:-}" in
+    --redact)
+        [[ $# -eq 1 ]] || {
+            echo 'Unexpected report arguments' >&2
+            exit 2
+        }
+        echo '# mac-dotfiles report (redacted)'
+        echo
+        echo 'Allowlisted checks only. Hostnames, paths, identities, logs, diffs and raw command output are omitted.'
+        echo
+        echo '## Tool availability'
+        for tool in brew chezmoi git gh node; do
+            if command -v "$tool" >/dev/null 2>&1; then
+                printf -- '- %s: available\n' "$tool"
+            else
+                printf -- '- %s: missing\n' "$tool"
+            fi
+        done
+        echo
+        echo '## Health checks'
+        if command -v brew >/dev/null 2>&1; then
+            if brew bundle check --global --no-upgrade >/dev/null 2>&1; then
+                echo '- Bundle: satisfied'
+            else
+                echo '- Bundle: warning (missing items or inspection error)'
+            fi
+        else
+            echo '- Bundle: unavailable'
+        fi
+        if command -v gh >/dev/null 2>&1; then
+            if gh auth status >/dev/null 2>&1; then
+                echo '- GitHub auth: configured'
+            else
+                echo '- GitHub auth: warning'
+            fi
+        else
+            echo '- GitHub auth: unavailable'
+        fi
+        if [[ -f "$HOME/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist" ]]; then
+            echo '- Maintenance plist: installed'
+        else
+            echo '- Maintenance plist: missing'
+        fi
+        if command -v launchctl >/dev/null 2>&1 && launchctl print "gui/$(id -u)/com.chezmoi.mac-dotfiles.maintenance" >/dev/null 2>&1; then
+            echo '- Maintenance agent: loaded'
+        else
+            echo '- Maintenance agent: unavailable or not loaded'
+        fi
+        exit 0
+        ;;
+    -h | --help)
+        echo 'Usage: mac-dotfiles-report.sh [--redact]'
+        echo 'Default: detailed local report. --redact: shareable allowlisted summary without raw logs or personal data.'
+        exit 0
+        ;;
+    '') ;;
+    *)
+        echo 'Unknown report option; use --help' >&2
+        exit 2
+        ;;
+esac
+
 STATE_DIR="$HOME/.local/state/mac-dotfiles"
 MAINTENANCE_LOG="$STATE_DIR/maintenance.log"
 LAUNCHD_LOG="$STATE_DIR/launchd.log"

@@ -99,6 +99,14 @@ expect_call mac-dotfiles-report.sh
 run_launcher report "$WORK_DIR/report with spaces.md" >/dev/null
 assert_calls report
 [[ "$(cat "$WORK_DIR/report with spaces.md")" == 'report content' ]] || fail "report missing"
+expect_call mac-dotfiles-report.sh --redact
+run_launcher report --redact >/dev/null
+assert_calls 'redacted report'
+[[ "$(cat "$HOME_DIR/mac-dotfiles-report-redacted.md")" == 'report content' ]] || fail 'redacted report missing'
+expect_call mac-dotfiles-report.sh --redact
+run_launcher report --redact "$WORK_DIR/shared report.md" >/dev/null
+assert_calls 'redacted report with custom path'
+[[ -f "$WORK_DIR/shared report.md" ]] || fail 'custom redacted report missing'
 
 # A failed certified update must not fall through to doctor or reporting.
 expect_call mac-dotfiles-certified-update.sh run

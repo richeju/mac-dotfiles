@@ -414,6 +414,10 @@ When run outside macOS (for example in Linux CI or a dev container), `doctor.sh`
 
 The report is Markdown and includes macOS details, core tool versions, Homebrew bundle status, Brewfile formulae/casks, pending chezmoi changes, GitHub CLI auth status, maintenance LaunchAgent state, doctor output, and recent maintenance logs.
 
+For sharing diagnostics, use `mac-dotfiles.sh report --redact` (writes `~/mac-dotfiles-report-redacted.md`), or `mac-dotfiles.sh report --redact /path/to/report.md`. This deliberately smaller report contains only fixed-label tool availability, bundle/authentication status, and maintenance-agent checks. It excludes hostnames, personal paths, identities, package inventories, raw command output, logs, diffs, and detailed doctor evidence rather than attempting to guess every possible secret. The default report remains detailed and should be kept private or reviewed before sharing.
+
+The real-chezmoi bootstrap integration test also covers a deleted upstream branch, preservation of local edits when branch repair is refused, and a failing update hook followed by a successful retry. This tests failure propagation and recovery by a corrected commit, not transactional rollback of the quick bootstrap.
+
 #### Run a safe update
 ```bash
 ~/.local/bin/mac-dotfiles-safe-update.sh
