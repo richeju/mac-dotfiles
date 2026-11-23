@@ -2,6 +2,23 @@
 
 Automatic installation and configuration script for new macOS setup using [chezmoi](https://www.chezmoi.io/)
 
+## Contributing and delivery
+
+Changes are delivered through a topic branch and pull request, never by direct
+push to `main`. Enable squash auto-merge on the intended PR with
+`gh pr merge --auto --squash PR_NUMBER`. Auto-merge is opt-in per PR: enabling
+the repository feature does not approve or merge every PR automatically.
+
+The active GitHub ruleset requires an up-to-date branch, resolved review
+conversations, and successful `secret-scan`, `shell-tests`, and
+`macos-validation` checks. There is no administrator bypass. If a check fails,
+fix the branch and rerun validation rather than disabling protection.
+Repository delivery instructions are also recorded in `AGENTS.md`.
+
+CI actions are pinned to full upstream release commit SHAs. Update the SHA and
+version comment together after reviewing upstream changes; the current actions
+use Node 24 on GitHub-hosted runners.
+
 ## 🚀 Quick Setup
 
 On a new Mac or an existing setup, run this command to apply the latest version from `main` and install the applications for your active profile:
