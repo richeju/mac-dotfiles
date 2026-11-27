@@ -210,11 +210,8 @@ test_direct_commands() {
     assert_contains "$output" "Report written to $report_path" "report command should print destination"
     assert_contains "$(cat "$report_path")" "report-called" "report command should write report content"
 
-    output="$(run_launcher "$env_dir" profile set developer)"
-    assert_contains "$output" "converge-engine profile set developer" "profile command should route to convergence engine"
-
-    output="$(run_launcher "$env_dir" plan --profile gaming)"
-    assert_contains "$output" "converge-engine plan --profile gaming" "plan should forward options"
+    output="$(run_launcher "$env_dir" plan --json)"
+    assert_contains "$output" "converge-engine plan --json" "plan should forward options"
 
     output="$(run_launcher "$env_dir" converge --yes)"
     assert_contains "$output" "converge-engine converge --yes" "converge should forward confirmation"

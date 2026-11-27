@@ -7,14 +7,15 @@ SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
 TRANSACTIONS_DIR="$STATE_DIR/transactions"
 LOCK_DIR="$STATE_DIR/operation.lock"
 REPORT_SCRIPT="$HOME/.local/bin/mac-dotfiles-report.sh"
-PROFILE_CATALOG="$SOURCE_DIR/profiles/catalog.json"
-PROFILE=""
+BREWFILE="$SOURCE_DIR/dot_Brewfile"
 ASSUME_YES=0
 DRY_RUN=0
 CLEANUP=0
 JSON_MODE=0
 RUN_ID="${MAC_DOTFILES_RUN_ID:-$(date '+%Y%m%d-%H%M%S')-$$}"
 RUN_DIR=""
+# Retain the v1 metadata field for readers and for older transaction rollbacks.
+TRANSACTION_PROFILE="full"
 BACKUP_DIR=""
 PLAN_DRIFT=0
 ROLLBACK_ERRORS=0
@@ -29,19 +30,17 @@ usage() {
 Usage: mac-dotfiles-converge.sh COMMAND [options]
 
 Commands:
-  profile list|current|show [NAME]|set NAME
-  plan [--profile NAME] [--json]      Preview changes; always exits 0.
-  drift [--profile NAME] [--json]     Exit 0 when converged, 1 on drift, 2 on inspection error.
-  converge [--profile NAME] [--yes] [--dry-run] [--cleanup]
-  validate [--profile NAME]           Validate blocking invariants only.
+  plan [--json]                       Preview changes; exits 0 on successful inspection.
+  drift [--json]                      Exit 0 when converged, 1 on drift, 2 on inspection error.
+  converge [--yes] [--dry-run] [--cleanup]
+  validate                            Validate blocking invariants only.
   transactions                        List convergence transactions.
   rollback [latest|RUN_ID] [--yes]    Restore a transaction snapshot.
 
 Options:
-  --profile NAME  Evaluate or converge to a supported profile.
   --yes           Skip interactive confirmation.
   --dry-run       Print the plan without applying it.
-  --cleanup       Remove Homebrew items not declared by the selected profile.
+  --cleanup       Remove Homebrew items not declared in the Brewfile.
   --json          Emit strict JSON for plan and drift automation.
 USAGE
 }
@@ -59,34 +58,6 @@ require_command() {
     command_exists "$1" || die "Required command '$1' is missing"
 }
 
-require_profile_catalog() {
-    require_command jq
-    [[ -f "$PROFILE_CATALOG" ]] || die "Profile catalog is missing: $PROFILE_CATALOG"
-    jq -e '
-        .schema_version == 1 and
-        (.profiles | type == "array" and length > 0) and
-        all(.profiles[];
-            (.name | type == "string" and test("^[a-z][a-z0-9-]*$")) and
-            (.description | type == "string" and length > 0) and
-            (.components | type == "array" and length > 0 and length == (unique | length)) and
-            all(.components[]; type == "string" and test("^[a-z][a-z0-9-]*$"))
-        ) and
-        (.profiles | map(.name) | length == (unique | length)) and
-        any(.profiles[]; .name == "full")
-    ' "$PROFILE_CATALOG" >/dev/null 2>&1 || die "Invalid profile catalog: $PROFILE_CATALOG"
-}
-
-supported_profiles() {
-    require_profile_catalog
-    jq -r '.profiles[].name' "$PROFILE_CATALOG"
-}
-
-require_profile() {
-    require_profile_catalog
-    jq -e --arg name "$1" 'any(.profiles[]; .name == $name)' "$PROFILE_CATALOG" >/dev/null ||
-        die "Unknown profile '$1' (expected: $(supported_profiles | tr '\n' ' '))"
-}
-
 config_file() {
     if [[ -n "${MAC_DOTFILES_CONFIG_FILE:-}" ]]; then
         printf '%s\n' "$MAC_DOTFILES_CONFIG_FILE"
@@ -97,33 +68,6 @@ config_file() {
     fi
 }
 
-current_profile() {
-    local config
-    config="$(config_file)"
-
-    if [[ -f "$config" ]]; then
-        awk '
-            /^\[data\]$/ { in_data=1; next }
-            /^\[/ { in_data=0 }
-            in_data && /^[[:space:]]*profile[[:space:]]*=/ {
-                value=$0
-                sub(/^[^=]*=[[:space:]]*"?/, "", value)
-                sub(/"?[[:space:]]*$/, "", value)
-                print value
-                found=1
-                exit
-            }
-            END { if (!found) print "full" }
-        ' "$config"
-    else
-        echo "full"
-    fi
-}
-
-profile_description() {
-    jq -r --arg name "$1" '.profiles[] | select(.name == $name) | .description' "$PROFILE_CATALOG"
-}
-
 migrator_path() {
     if [[ -x "$HOME/.local/bin/mac-dotfiles-migrate.sh" ]]; then
         echo "$HOME/.local/bin/mac-dotfiles-migrate.sh"
@@ -132,137 +76,9 @@ migrator_path() {
     fi
 }
 
-profile_component() {
-    local name="$1"
-    local path="$SOURCE_DIR/profiles/$name.Brewfile"
-    [[ -f "$path" ]] || die "Profile component is missing: $path"
-    cat "$path"
-    echo
-}
-
-render_profile() {
-    local profile="$1" component components
-    require_profile "$profile"
-    components="$(jq -r --arg name "$profile" '.profiles[] | select(.name == $name) | .components[]' "$PROFILE_CATALOG")"
-
-    echo "# Generated profile: $profile"
-    while IFS= read -r component; do
-        profile_component "$component"
-    done <<<"$components"
-}
-
-set_profile() {
-    local profile="$1"
-    local config temp backup_dir lock_acquired=0 lock_owner=""
-    require_profile "$profile"
-    if [[ "$profile" == "$(current_profile)" ]]; then
-        echo "✓ Profile '$profile' is already active"
-        return 0
-    fi
-
-    [[ -f "$LOCK_DIR/pid" ]] && lock_owner="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
-    if [[ "$lock_owner" != "$$" ]]; then
-        acquire_lock
-        lock_acquired=1
-        trap release_lock EXIT
-    fi
-    config="$(config_file)"
-    if [[ ! -f "$config" ]]; then
-        if [[ "$lock_acquired" -eq 1 ]]; then
-            release_lock
-            trap - EXIT
-        fi
-        die "chezmoi config not found: $config"
-    fi
-
-    backup_dir="$STATE_DIR/profile-backups"
-    mkdir -p "$backup_dir"
-    cp -p "$config" "$backup_dir/$(date '+%Y%m%d-%H%M%S')-$$-chezmoi.toml"
-    temp="$(mktemp "${TMPDIR:-/tmp}/mac-dotfiles-profile.XXXXXX")"
-
-    awk -v profile="$profile" '
-        BEGIN { in_data=0; data_found=0; profile_written=0 }
-        /^\[data\]$/ {
-            print
-            in_data=1
-            data_found=1
-            next
-        }
-        /^\[/ && in_data {
-            if (!profile_written) {
-                print "profile = \"" profile "\""
-                profile_written=1
-            }
-            in_data=0
-        }
-        in_data && /^[[:space:]]*profile[[:space:]]*=/ {
-            if (!profile_written) {
-                print "profile = \"" profile "\""
-                profile_written=1
-            }
-            next
-        }
-        { print }
-        END {
-            if (!data_found) {
-                print ""
-                print "[data]"
-                print "profile = \"" profile "\""
-            } else if (in_data && !profile_written) {
-                print "profile = \"" profile "\""
-            }
-        }
-    ' "$config" >"$temp"
-
-    chmod 600 "$temp"
-    mv "$temp" "$config"
-    if [[ "$lock_acquired" -eq 1 ]]; then
-        release_lock
-        trap - EXIT
-    fi
-    echo "✓ Active profile set to '$profile'"
-    echo "  Run 'mac-dotfiles.sh plan' to review the resulting drift."
-}
-
-profile_command() {
-    local action="${1:-current}"
-    shift || true
-
-    case "$action" in
-        list)
-            local item active marker names
-            names="$(supported_profiles)" || return $?
-            active="$(current_profile)"
-            while IFS= read -r item; do
-                marker=""
-                [[ "$item" == "$active" ]] && marker=" (active)"
-                printf '%-10s %s%s\n' "$item" "$(profile_description "$item")" "$marker"
-            done <<<"$names"
-            ;;
-        current)
-            current_profile
-            ;;
-        show)
-            local selected="${1:-$(current_profile)}"
-            render_profile "$selected"
-            ;;
-        set)
-            [[ $# -eq 1 ]] || die "Usage: profile set NAME"
-            set_profile "$1"
-            ;;
-        *) die "Unknown profile action: $action" ;;
-    esac
-}
-
 parse_common_options() {
     while (($#)); do
         case "$1" in
-            --profile)
-                [[ $# -ge 2 ]] || die "Missing value for --profile"
-                PROFILE="$2"
-                require_profile "$PROFILE"
-                shift
-                ;;
             --yes) ASSUME_YES=1 ;;
             --dry-run) DRY_RUN=1 ;;
             --cleanup) CLEANUP=1 ;;
@@ -275,15 +91,7 @@ parse_common_options() {
         esac
         shift
     done
-    PROFILE="${PROFILE:-$(current_profile)}"
-    require_profile "$PROFILE"
-}
-
-new_temp_brewfile() {
-    local temp
-    temp="$(mktemp "${TMPDIR:-/tmp}/mac-dotfiles-brewfile.XXXXXX")"
-    render_profile "$PROFILE" >"$temp"
-    printf '%s\n' "$temp"
+    [[ -r "$BREWFILE" && -f "$BREWFILE" ]] || die "Managed Brewfile is missing or unreadable: $BREWFILE"
 }
 
 doctor_warnings() {
@@ -327,15 +135,13 @@ inspect_drift() {
 }
 
 print_plan() {
-    local desired diff_file brew_file temp_dir
+    local desired="$BREWFILE" diff_file brew_file temp_dir
     local brewfile_changed=false dotfiles_changed=false packages_changed=false migrations_changed=false
     require_command chezmoi
     require_command brew
     temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-plan.XXXXXX")"
-    desired="$temp_dir/desired.Brewfile"
     diff_file="$temp_dir/chezmoi.diff"
     brew_file="$temp_dir/brew-check.txt"
-    render_profile "$PROFILE" >"$desired"
 
     if ! inspect_drift "$desired" "$diff_file" "$brew_file"; then
         rm -rf "$temp_dir"
@@ -351,22 +157,19 @@ print_plan() {
     if [[ "$JSON_MODE" -eq 1 ]]; then
         require_command jq
         jq -n \
-            --arg profile "$PROFILE" \
-            --arg description "$(profile_description "$PROFILE")" \
             --argjson drift "$([[ "$PLAN_DRIFT" -eq 1 ]] && echo true || echo false)" \
             --argjson brewfile_changed "$brewfile_changed" \
             --argjson dotfiles_changed "$dotfiles_changed" \
             --argjson packages_changed "$packages_changed" \
             --argjson migrations_changed "$migrations_changed" \
             --argjson cleanup "$([[ "$CLEANUP" -eq 1 ]] && echo true || echo false)" \
-            '{schema_version: 1, profile: $profile, description: $description, drift: $drift, actions: {migrations: $migrations_changed, brewfile: $brewfile_changed, dotfiles: $dotfiles_changed, packages: $packages_changed, cleanup: $cleanup}}'
+            '{schema_version: 1, profile: "full", description: "Managed Brewfile", drift: $drift, actions: {migrations: $migrations_changed, brewfile: $brewfile_changed, dotfiles: $dotfiles_changed, packages: $packages_changed, cleanup: $cleanup}}'
         rm -rf "$temp_dir"
         return 0
     fi
 
     echo "🧭 mac-dotfiles convergence plan"
     echo "================================"
-    echo "Profile: $PROFILE — $(profile_description "$PROFILE")"
     echo
 
     if [[ "$MIGRATIONS_DRIFT" -eq 1 ]]; then
@@ -376,9 +179,9 @@ print_plan() {
     fi
 
     if [[ ! -f "$HOME/.Brewfile" ]] || ! cmp -s "$desired" "$HOME/.Brewfile"; then
-        echo "  [CHANGE][reversible] Render ~/.Brewfile for profile '$PROFILE'"
+        echo "  [CHANGE][reversible] Install the managed ~/.Brewfile"
     else
-        echo "  [OK]     ~/.Brewfile matches the selected profile"
+        echo "  [OK]     ~/.Brewfile matches the repository"
     fi
 
     if [[ -s "$diff_file" ]]; then
@@ -397,7 +200,7 @@ print_plan() {
     fi
 
     if [[ "$CLEANUP" -eq 1 ]]; then
-        echo "  [REMOVE][destructive] Remove Homebrew items outside the profile after confirmation"
+        echo "  [REMOVE][destructive] Remove Homebrew items outside the Brewfile after confirmation"
         brew bundle cleanup --file="$desired" 2>/dev/null | sed 's/^/            /' || true
     else
         echo "  [INFO]    Extra Homebrew items are preserved (use --cleanup to remove them)"
@@ -453,6 +256,15 @@ backup_for_target() {
     printf '%s\n' "$BACKUP_DIR/$label"
 }
 
+inventory_packages() {
+    local stage="$1"
+    shift
+    # The initial inventory includes dependencies too: an existing formula may
+    # later become explicitly requested without having been newly installed.
+    brew list --formula --full-name -1 "$@" | LC_ALL=C sort >"$RUN_DIR/brew-formulae-$stage.txt" &&
+        brew list --cask -1 | LC_ALL=C sort >"$RUN_DIR/brew-casks-$stage.txt"
+}
+
 snapshot_transaction() {
     local config target
     mkdir -p "$BACKUP_DIR"
@@ -467,9 +279,7 @@ snapshot_transaction() {
     backup_target "$config"
     backup_target "$STATE_DIR/schema-version"
 
-    brew leaves 2>/dev/null | sort >"$RUN_DIR/brew-leaves-before.txt" || :
-    brew list --cask 2>/dev/null | sort >"$RUN_DIR/brew-casks-before.txt" || :
-    render_profile "$PROFILE" >"$RUN_DIR/desired.Brewfile"
+    cp "$BREWFILE" "$RUN_DIR/desired.Brewfile"
     chezmoi diff >"$RUN_DIR/chezmoi-before.diff" 2>&1 || true
     if [[ -x "$REPORT_SCRIPT" ]]; then
         "$REPORT_SCRIPT" >"$RUN_DIR/report-before.md" || true
@@ -481,14 +291,14 @@ write_status() {
     timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     {
         echo "run_id=$RUN_ID"
-        echo "profile=$PROFILE"
+        echo "profile=$TRANSACTION_PROFILE"
         echo "status=$status"
         echo "updated_at=$timestamp"
     } >"$RUN_DIR/status.env"
 
     temp="$RUN_DIR/state.json.tmp"
     printf '{\n  "schema_version": 1,\n  "run_id": "%s",\n  "profile": "%s",\n  "status": "%s",\n  "updated_at": "%s"\n}\n' \
-        "$RUN_ID" "$PROFILE" "$status" "$timestamp" >"$temp"
+        "$RUN_ID" "$TRANSACTION_PROFILE" "$status" "$timestamp" >"$temp"
     mv "$temp" "$RUN_DIR/state.json"
 }
 
@@ -498,20 +308,7 @@ acquire_lock() {
         [[ -f "$LOCK_DIR/pid" ]] || die "Inherited operation lock is missing" 1
         return
     fi
-    if mkdir "$LOCK_DIR" 2>/dev/null; then
-        echo "$$" >"$LOCK_DIR/pid"
-        LOCK_ACQUIRED=1
-        return
-    fi
-
-    local owner=""
-    [[ -f "$LOCK_DIR/pid" ]] && owner="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
-    if [[ "$owner" =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null; then
-        die "Another convergence is running (PID $owner)" 1
-    fi
-    rm -rf "$LOCK_DIR"
-    mkdir "$LOCK_DIR"
-    echo "$$" >"$LOCK_DIR/pid"
+    /usr/bin/perl "$(dirname "${BASH_SOURCE[0]}")/mac-dotfiles-claim-lock.pl" "$LOCK_DIR" "$$" || exit $?
     LOCK_ACQUIRED=1
 }
 
@@ -564,23 +361,31 @@ restore_transaction_files() {
 }
 
 rollback_new_packages() {
-    local after item
-    after="$RUN_DIR/brew-leaves-after.txt"
-    brew leaves 2>/dev/null | sort >"$after" || return 0
-    while IFS= read -r item; do
-        [[ -n "$item" ]] || continue
-        echo "↩ Removing newly installed formula: $item"
-        brew uninstall "$item" || ROLLBACK_ERRORS=1
-    done < <(comm -13 "$RUN_DIR/brew-leaves-before.txt" "$after")
-
-    after="$RUN_DIR/brew-casks-after.txt"
-    brew list --cask 2>/dev/null | sort >"$after" || return 0
+    local kind item
+    if ! inventory_packages after --installed-on-request; then
+        echo "✗ Cannot inspect Homebrew after failure; skipping package rollback" >&2
+        ROLLBACK_ERRORS=1
+        return
+    fi
+    # Resolve both diffs before uninstalling anything. Homebrew's autoremove
+    # would also consider dependencies installed before this transaction.
+    for kind in casks formulae; do
+        if ! LC_ALL=C comm -13 "$RUN_DIR/brew-$kind-before.txt" "$RUN_DIR/brew-$kind-after.txt" >"$RUN_DIR/brew-$kind-new.txt"; then
+            echo "✗ Cannot compare Homebrew inventories; skipping package rollback" >&2
+            ROLLBACK_ERRORS=1
+            return
+        fi
+    done
     while IFS= read -r item; do
         [[ -n "$item" ]] || continue
         echo "↩ Removing newly installed cask: $item"
-        brew uninstall --cask "$item" || ROLLBACK_ERRORS=1
-    done < <(comm -13 "$RUN_DIR/brew-casks-before.txt" "$after")
-    brew autoremove >/dev/null 2>&1 || true
+        HOMEBREW_NO_AUTOREMOVE=1 brew uninstall --cask "$item" || ROLLBACK_ERRORS=1
+    done <"$RUN_DIR/brew-casks-new.txt"
+    while IFS= read -r item; do
+        [[ -n "$item" ]] || continue
+        echo "↩ Removing newly installed formula: $item"
+        HOMEBREW_NO_AUTOREMOVE=1 brew uninstall --formula "$item" || ROLLBACK_ERRORS=1
+    done <"$RUN_DIR/brew-formulae-new.txt"
 }
 
 reload_launchagent() {
@@ -596,7 +401,7 @@ rollback_current_transaction() {
     ROLLBACK_ERRORS=0
     echo "↩ Rolling back transaction $RUN_ID"
     restore_transaction_files
-    if [[ "$ROLLBACK_PACKAGES" -eq 1 ]] && command_exists brew && [[ -f "$RUN_DIR/brew-leaves-before.txt" ]]; then
+    if [[ "$ROLLBACK_PACKAGES" -eq 1 ]]; then
         rollback_new_packages
     fi
     command_exists launchctl && reload_launchagent
@@ -627,8 +432,7 @@ backup_current_before_manual_rollback() {
 }
 
 blocking_validate() {
-    local desired
-    desired="$(new_temp_brewfile)"
+    local desired="$BREWFILE"
     local status=0
     local migrator
 
@@ -639,9 +443,9 @@ blocking_validate() {
         echo "✓ Managed dotfiles are synchronized"
     fi
     if [[ -f "$HOME/.Brewfile" ]] && cmp -s "$desired" "$HOME/.Brewfile"; then
-        echo "✓ Rendered Brewfile matches profile '$PROFILE'"
+        echo "✓ Installed Brewfile matches the repository"
     else
-        echo "✗ Rendered Brewfile does not match profile '$PROFILE'" >&2
+        echo "✗ Installed Brewfile differs from the repository" >&2
         status=1
     fi
     if brew bundle check --no-upgrade --file="$desired" --quiet >/dev/null 2>&1; then
@@ -666,7 +470,6 @@ blocking_validate() {
         echo "✗ Repository schema migrations are pending" >&2
         status=1
     fi
-    rm -f "$desired"
     return "$status"
 }
 
@@ -698,18 +501,15 @@ apply_convergence() {
         echo "==> Applying repository schema migrations"
         MAC_DOTFILES_LOCK_HELD=1 bash "$migrator" apply || return 1
     fi
-    if [[ "$PROFILE" != "$(current_profile)" ]]; then
-        set_profile "$PROFILE"
-    fi
 
     echo "==> Applying managed dotfiles"
     MAC_DOTFILES_ORCHESTRATED=1 chezmoi apply --force --no-tty || return 1
 
-    echo "==> Reconciling Homebrew profile"
+    echo "==> Reconciling Homebrew packages"
     brew bundle install --no-upgrade --file="$HOME/.Brewfile" --verbose || return 1
 
     if [[ "$CLEANUP" -eq 1 ]]; then
-        echo "==> Removing Homebrew items outside the profile"
+        echo "==> Removing Homebrew items outside the Brewfile"
         brew bundle cleanup --file="$HOME/.Brewfile" --force || return 1
     fi
 
@@ -769,6 +569,11 @@ converge_command() {
     BACKUP_DIR="$RUN_DIR/backups"
     mkdir -p "$RUN_DIR"
     write_status "snapshotting"
+    if ! inventory_packages before; then
+        write_status "snapshot_failed"
+        echo "✗ Cannot record the Homebrew inventory; convergence stopped before applying changes" >&2
+        return 1
+    fi
     snapshot_transaction
     TRANSACTION_ACTIVE=1
     write_status "applying"
@@ -800,7 +605,7 @@ converge_command() {
 find_transaction() {
     local selected="$1" candidate latest=""
     if [[ "$selected" != "latest" ]]; then
-        [[ -d "$TRANSACTIONS_DIR/$selected" ]] || die "Transaction not found: $selected" 1
+        [[ -d "$TRANSACTIONS_DIR/$selected/backups" ]] || die "Transaction snapshot not found: $selected" 1
         printf '%s\n' "$TRANSACTIONS_DIR/$selected"
         return
     fi
@@ -813,9 +618,9 @@ find_transaction() {
 }
 
 transactions_command() {
-    local dir status profile updated found=0
+    local dir status updated found=0
     echo "Convergence transactions"
-    printf '%-24s %-16s %-10s %s\n' "Run ID" "Status" "Profile" "Updated"
+    printf '%-24s %-16s %s\n' "Run ID" "Status" "Updated"
     [[ -d "$TRANSACTIONS_DIR" ]] || {
         echo "No transactions found."
         return
@@ -824,9 +629,8 @@ transactions_command() {
         [[ -f "$dir/status.env" ]] || continue
         found=1
         status="$(awk -F= '$1 == "status" {print $2}' "$dir/status.env")"
-        profile="$(awk -F= '$1 == "profile" {print $2}' "$dir/status.env")"
         updated="$(awk -F= '$1 == "updated_at" {sub(/^[^=]*=/, ""); print}' "$dir/status.env")"
-        printf '%-24s %-16s %-10s %s\n' "${dir##*/}" "$status" "$profile" "$updated"
+        printf '%-24s %-16s %s\n' "${dir##*/}" "$status" "$updated"
     done < <(find "$TRANSACTIONS_DIR" -mindepth 1 -maxdepth 1 -type d -print | sort -r)
     [[ "$found" -eq 1 ]] || echo "No transactions found."
 }
@@ -843,8 +647,8 @@ manual_rollback_command() {
     done
     RUN_DIR="$(find_transaction "$selected")"
     RUN_ID="${RUN_DIR##*/}"
+    TRANSACTION_PROFILE="$(awk -F= '$1 == "profile" { print $2; exit }' "$RUN_DIR/status.env")"
     BACKUP_DIR="$RUN_DIR/backups"
-    PROFILE="$(awk -F= '$1 == "profile" {print $2}' "$RUN_DIR/status.env")"
 
     if [[ "$ASSUME_YES" -ne 1 ]]; then
         [[ -t 0 ]] || die "Interactive confirmation required; rerun with --yes" 1
@@ -868,7 +672,6 @@ command="${1:-plan}"
 shift || true
 
 case "$command" in
-    profile) profile_command "$@" ;;
     plan) plan_command "$@" ;;
     drift) drift_command "$@" ;;
     converge) converge_command "$@" ;;

@@ -25,7 +25,12 @@ if ! (
 fi
 jq -e '.schema_version == 1 and .kind == "mac-dotfiles-certification" and .overall == "pass"' "$output" >/dev/null
 jq -e '[.checks[] | select(.status == "fail")] | length == 0' "$output" >/dev/null
+jq -e '.checks[] | select(.name == "brewfile" and .status == "pass")' "$output" >/dev/null
 jq -e '.checks[] | select(.name == "compliance-catalog" and .status == "pass")' "$output" >/dev/null
 cmp -s "$output" "$state_dir/certifications/latest.json"
+[[ ! -e "$state_dir/maintenance-status.json" ]] || {
+    echo "[FAIL] fixture maintenance wrote to the caller's state directory" >&2
+    exit 1
+}
 
 echo "[PASS] certification tests completed"

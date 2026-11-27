@@ -123,10 +123,20 @@ grep -Fq 'name = "Test User"' "$test_root/home/.config/chezmoi/chezmoi.toml" || 
 [[ "$(cat "$test_root/home/.local/state/mac-dotfiles/schema-version")" == 2 ]] || fail "real migrations did not run"
 grep -Fq 'defaults write' "$test_root/commands.log" || fail "preference hooks were not exercised"
 grep -Fq 'launchctl bootstrap' "$test_root/commands.log" || fail "LaunchAgent hook was not exercised"
+cmp -s "$test_root/origin/dot_Brewfile" "$test_root/home/.Brewfile" || fail "fresh bootstrap should deploy the canonical Brewfile"
 cp "$test_root/home/.Brewfile" "$test_root/manifest-before"
 cp "$test_root/commands.log" "$test_root/hooks-before"
 
+# Upgrade a Mac whose old developer manifest included Go and excluded Steam.
+config="$test_root/home/.config/chezmoi/chezmoi.toml"
+awk '/^\[data\]$/ {print; print "profile = \"developer\""; print "custom_setting = \"keep\""; next} {print}' "$config" >"$test_root/legacy-config"
+cp "$test_root/legacy-config" "$config"
+sed '/cask "steam"/d' "$test_root/manifest-before" >"$test_root/home/.Brewfile"
+echo 'brew "go"' >>"$test_root/home/.Brewfile"
+
 run_bootstrap 0
+cmp -s "$test_root/manifest-before" "$test_root/home/.Brewfile" || fail "old profile should converge to the canonical Brewfile"
+cmp -s "$test_root/legacy-config" "$config" || fail "an existing chezmoi configuration should not be rewritten"
 assert_install_count 1
 cmp -s "$test_root/hooks-before" "$test_root/commands.log" || fail "unchanged hooks should not rerun"
 

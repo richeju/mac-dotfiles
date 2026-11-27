@@ -26,7 +26,6 @@ Commands:
   explain       Explain doctor warnings and suggested fixes
   maintenance   Run dotfiles/Homebrew maintenance
   diff          Show chezmoi diff
-  profile       List, inspect, or select a declarative machine profile
   plan          Preview desired-state changes without modifying the Mac
   drift         Detect whether the Mac differs from its desired state
   converge      Apply a transactional convergence with automatic rollback
@@ -114,16 +113,6 @@ run_report() {
     echo "Report written to $target"
 }
 
-run_profile_menu() {
-    local profile
-    dispatch_command profile list
-    echo
-    printf "New profile (leave empty to keep current): "
-    IFS= read -r profile
-    [[ -z "$profile" ]] && return 0
-    dispatch_command profile set "$profile"
-}
-
 show_menu() {
     cat <<'MENU'
 mac-dotfiles
@@ -143,7 +132,7 @@ mac-dotfiles
 12. Show desired-state plan
 13. Show configuration drift
 14. Converge this Mac transactionally
-15. Manage machine profile
+15. Validate the desired state
 16. Show/apply schema migrations
 17. Certify this Mac
 18. Disaster recovery snapshots
@@ -177,7 +166,7 @@ run_menu() {
             12) dispatch_command plan ;;
             13) dispatch_command drift || true ;;
             14) dispatch_command converge ;;
-            15) run_profile_menu ;;
+            15) dispatch_command validate ;;
             16) dispatch_command migrate plan ;;
             17) dispatch_command certify ;;
             18) dispatch_command recovery list ;;
@@ -215,7 +204,7 @@ dispatch_command() {
         doctor) run_if_executable "$DOCTOR_SCRIPT" "$@" ;;
         explain) run_if_executable "$DOCTOR_SCRIPT" --explain ;;
         diff) run_chezmoi diff ;;
-        profile | plan | drift | converge | validate | transactions)
+        plan | drift | converge | validate | transactions)
             run_managed_script converge "$command" "$@"
             ;;
         tx-rollback) run_managed_script converge rollback "$@" ;;

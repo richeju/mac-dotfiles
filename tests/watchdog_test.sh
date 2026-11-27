@@ -31,6 +31,10 @@ cat >/dev/null
 OSASCRIPT
     cat >"$root/bin/stat" <<'STAT'
 #!/usr/bin/env bash
+if [[ "$1" == "-Lf" || "$1" == "-Lc" ]]; then
+  [[ "${WATCHDOG_TEST_STAT_FAILURE:-0}" != "1" ]] || exit 1
+  exec /usr/bin/stat "$@"
+fi
 if [[ "$1" == "-f" ]]; then
   echo "gnu-stat-probe-output"
   exit 1
@@ -46,10 +50,23 @@ STAT
     mkdir -p "$root/state/compliance"
     echo '{"schema_version":1,"kind":"mac-dotfiles-nist-compliance","overall":"pass","summary":{"pass":16,"fail":0,"error":0},"results":[]}' >"$root/state/compliance/latest.json"
     echo snapshot >"$root/state/recovery-snapshots/mac-dotfiles-test.tar.gz"
+    write_verified_fixture "$root" "$root/state/recovery-snapshots/mac-dotfiles-test.tar.gz" "$now"
     echo '===== 2026-01-01 00:00:00 :: mac-dotfiles maintenance =====' >"$root/state/maintenance.log"
     echo '✅ Maintenance completed' >>"$root/state/maintenance.log"
     echo '{"schema_version":1,"exit_status":0}' >"$root/state/maintenance-status.json"
     : >"$root/notifications.log"
+}
+
+write_verified_fixture() {
+    local root="$1" snapshot="$2" epoch="$3" attributes
+    if [[ "$(uname -s)" == Darwin ]]; then
+        attributes="$(stat -Lf '%z:%m' "$snapshot")"
+    else
+        attributes="$(stat -Lc '%s:%Y' "$snapshot")"
+    fi
+    jq -n --arg path "$snapshot" --arg attributes "$attributes" --argjson epoch "$epoch" \
+        '{schema_version:1,path:$path,verified_at:(now | todateiso8601),snapshot_epoch:$epoch,attributes:$attributes}' \
+        >"$root/state/recovery-last-verified.json"
 }
 
 run_watchdog() {
@@ -164,6 +181,7 @@ test_freshness_boundaries() {
     for age in 59 60 61; do
         expected=healthy
         [[ "$age" -le 60 ]] || expected=warning
+        write_verified_fixture "$root" "$root/state/recovery-snapshots/mac-dotfiles-test.tar.gz" "$((now - age))"
         WATCHDOG_TEST_AGE="$age" \
             MAC_DOTFILES_CERTIFICATION_MAX_AGE_SECONDS=60 \
             MAC_DOTFILES_SNAPSHOT_MAX_AGE_SECONDS=60 \
@@ -176,9 +194,52 @@ test_freshness_boundaries() {
 
     WATCHDOG_TEST_STAT_FAILURE=1 run_watchdog "$root" "$now" run --no-notify >/dev/null
     jq -e \
-        '[.checks[] | select(.name == "certification" or .name == "recovery-snapshot" or .name == "maintenance")] | length == 3 and all(.status == "warning" and (.detail | endswith("age is unavailable")))' \
+        '[.checks[] | select(.name == "certification" or .name == "maintenance")] | length == 2 and all(.status == "warning" and (.detail | endswith("age is unavailable")))' \
         "$root/state/watchdog/state.json" >/dev/null || fail "unavailable timestamps should produce explicit warnings"
+    jq -e '.checks[] | select(.name == "recovery-snapshot" and .status == "warning" and (.detail | contains("metadata is unavailable")))' \
+        "$root/state/watchdog/state.json" >/dev/null || fail "unreadable archive metadata should warn"
     rm -rf "$root"
+}
+
+test_verified_archive_is_live_in_status() {
+    local root now cloud archive text cached
+    root="$(mktemp -d)"
+    now="$(date '+%s')"
+    setup_env "$root" "$now"
+    cloud="$root/Cloud Drive"
+    mkdir "$cloud"
+    archive="$cloud/backup.tar.gz.age"
+    echo encrypted >"$archive"
+    write_verified_fixture "$root" "$archive" "$now"
+    run_watchdog "$root" "$now" status --json | jq -e --arg path "$archive" \
+        '.status == "healthy" and any(.checks[]; .name == "recovery-snapshot" and .path == $path and .accessible)' \
+        >/dev/null || fail "status should find the verified archive even before a watchdog run"
+    [[ ! -e "$root/state/watchdog/state.json" ]] || fail "status should be read-only"
+    run_watchdog "$root" "$now" run --no-notify >/dev/null
+    cached="$(cat "$root/state/watchdog/state.json")"
+
+    mv "$cloud" "$root/offline"
+    run_watchdog "$root" "$now" status --json | jq -e --arg path "$archive" \
+        '.status == "warning" and any(.checks[]; .path == $path and .accessible == false and .verified_at != null)' \
+        >/dev/null || fail "status should reflect an unavailable volume immediately, even if a local archive exists"
+    mv "$root/offline" "$cloud"
+    text="$(run_watchdog "$root" "$now" status)"
+    [[ "$text" == *"last verified"* && "$text" == *"$archive"* ]] || fail "text status should identify the verified archive"
+    echo replacement >>"$archive"
+    run_watchdog "$root" "$now" status --json | jq -e \
+        '.checks[] | select(.name == "recovery-snapshot" and .status == "warning" and .accessible and (.detail | contains("changed")))' \
+        >/dev/null || fail "status should flag a changed archive for re-verification"
+    [[ "$cached" == "$(cat "$root/state/watchdog/state.json")" && ! -s "$root/notifications.log" ]] ||
+        fail "reading status must preserve the watchdog history and never notify"
+
+    rm "$root/state/recovery-last-verified.json"
+    MAC_DOTFILES_SNAPSHOT_DIR="$cloud" run_watchdog "$root" "$now" status --json | jq -e --arg path "$archive" \
+        '.checks[] | select(.name == "recovery-snapshot" and .status == "warning" and .verified_at == null and (.detail | contains($path)))' \
+        >/dev/null || fail "an existing unverified archive should be identified in the configured directory"
+    echo '{}' >"$root/state/recovery-last-verified.json"
+    run_watchdog "$root" "$now" status --json | jq -e \
+        '.checks[] | select(.name == "recovery-snapshot" and .status == "warning" and (.detail | contains("invalid")))' \
+        >/dev/null || fail "an invalid verification receipt should warn"
 }
 
 test_transitions_and_cooldown
@@ -188,4 +249,5 @@ test_rejected_certified_update_is_critical
 test_nist_findings_are_advisory
 test_manual_notification
 test_freshness_boundaries
+test_verified_archive_is_live_in_status
 echo "[PASS] watchdog tests completed"

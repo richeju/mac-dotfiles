@@ -5,7 +5,7 @@ set -euo pipefail
 # launchd starts jobs with a minimal PATH and does not read shell profiles.
 export PATH="${MAC_DOTFILES_PATH:-$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin}"
 
-LOG_DIR="$HOME/.local/state/mac-dotfiles"
+LOG_DIR="${MAC_DOTFILES_STATE_DIR:-$HOME/.local/state/mac-dotfiles}"
 LOG_FILE="$LOG_DIR/maintenance.log"
 STATUS_FILE="$LOG_DIR/maintenance-status.json"
 LOCK_DIR="$LOG_DIR/operation.lock"
@@ -19,16 +19,7 @@ certified_update_failed=0
 
 mkdir -p "$LOG_DIR"
 
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-    echo "⚠️  Maintenance already running (lock: $LOCK_DIR), skipping"
-    exit 0
-fi
-echo "$$" >"$LOCK_DIR/pid"
-
-cleanup_lock() {
-    rm -f "$LOCK_DIR/pid"
-    rmdir "$LOCK_DIR" 2>/dev/null || true
-}
+lock_acquired=0
 
 write_maintenance_status() {
     local exit_status="$1" timestamp epoch temp
@@ -43,7 +34,10 @@ write_maintenance_status() {
 
 maintenance_exit() {
     local exit_status=$?
-    cleanup_lock
+    if [[ "$lock_acquired" -eq 1 ]]; then
+        rm -f "$LOCK_DIR/pid"
+        rmdir "$LOCK_DIR" 2>/dev/null || true
+    fi
     trap - EXIT
     if ! write_maintenance_status "$exit_status"; then
         echo "⚠️  Failed to persist maintenance status: $STATUS_FILE"
@@ -53,7 +47,20 @@ maintenance_exit() {
     fi
     exit "$exit_status"
 }
+if /usr/bin/perl "$(dirname "${BASH_SOURCE[0]}")/mac-dotfiles-claim-lock.pl" "$LOCK_DIR" "$$"; then
+    lock_acquired=1
+else
+    lock_status=$?
+    if [[ "$lock_status" -eq 1 ]]; then
+        echo "Skipping maintenance while another mac-dotfiles operation owns the lock."
+        exit 0
+    fi
+    trap maintenance_exit EXIT
+    exit "$lock_status"
+fi
 trap maintenance_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 exec > >(tee -a "$LOG_FILE") 2>&1
 

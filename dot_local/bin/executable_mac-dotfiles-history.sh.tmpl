@@ -141,18 +141,17 @@ print_rollbacks() {
 }
 
 print_transactions() {
-    local path id status profile found=0
+    local path id status found=0
 
     echo
     echo "Convergence transactions"
-    printf '%-24s  %-16s  %-10s\n' "Run ID" "Status" "Profile"
+    printf '%-24s  %s\n' "Run ID" "Status"
     while IFS= read -r path; do
         [[ -f "$path/status.env" ]] || continue
         found=1
         id="${path##*/}"
         status="$(awk -F= '$1 == "status" {print $2}' "$path/status.env")"
-        profile="$(awk -F= '$1 == "profile" {print $2}' "$path/status.env")"
-        printf '%-24s  %-16s  %-10s\n' "$id" "$status" "$profile"
+        printf '%-24s  %s\n' "$id" "$status"
     done < <(list_directories "$TRANSACTIONS_DIR")
     [[ "$found" -eq 1 ]] || echo "No convergence transactions found."
 }

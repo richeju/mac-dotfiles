@@ -23,11 +23,7 @@ setup_env() {
 [[ "$1" == "leaves" ]] && { echo jq; exit; }
 [[ "$1 $2" == "list --cask" ]] && echo raycast
 MOCK
-    cat >"$root/bin/chezmoi" <<'MOCK'
-#!/usr/bin/env bash
-[[ "$1" == "data" ]] && echo '{"profile":"developer"}'
-MOCK
-    chmod +x "$root/bin/brew" "$root/bin/chezmoi"
+    chmod +x "$root/bin/brew"
 }
 
 run_recovery() {
@@ -86,6 +82,32 @@ test_corruption_is_rejected() {
     if run_recovery "$root" verify "$root/corrupt.tar.gz" >/dev/null 2>&1; then
         fail "checksum corruption should be rejected"
     fi
+}
+
+test_last_verified_tracks_only_successful_explicit_verification() {
+    local root archive record expected checksum before
+    root="$(mktemp -d)"
+    setup_env "$root"
+    mkdir "$root/cloud drive"
+    archive="$root/cloud drive/portable backup"
+    record="$root/state/recovery-last-verified.json"
+    run_recovery "$root" create --output "$archive" >/dev/null
+    run_recovery "$root" inspect "$archive" >/dev/null
+    run_recovery "$root" restore "$archive" --dry-run >/dev/null
+    [[ ! -e "$record" ]] || fail "create, inspect and dry-run must not record a verification"
+
+    (cd "$root" && run_recovery "$root" verify "cloud drive/portable backup" >/dev/null)
+    expected="$(cd "$root/cloud drive" && pwd -P)/portable backup"
+    checksum="$(shasum -a 256 "$archive" | awk '{print $1}')"
+    jq -e --arg path "$expected" --arg sha256 "$checksum" \
+        '.path == $path and .sha256 == $sha256 and (.verified_at | fromdateiso8601 > 0) and .snapshot_epoch > 0' \
+        "$record" >/dev/null || fail "verification should remember the actual archive and its checksum"
+    before="$(cat "$record")"
+    echo broken >"$root/broken"
+    if run_recovery "$root" verify "$root/broken" >/dev/null 2>&1; then
+        fail "an unreadable archive should fail verification"
+    fi
+    [[ "$(cat "$record")" == "$before" ]] || fail "a failed verification replaced the last success"
 }
 
 test_unsafe_archive_path_is_rejected() {
@@ -168,8 +190,16 @@ test_legacy_openssl_envelope_remains_readable() {
     echo 'recovery-test-password' >"$password_file"
     chmod 600 "$password_file"
     run_recovery "$root" create --output "$archive" >/dev/null
+    mkdir "$root/legacy"
+    tar -C "$root/legacy" -xzf "$archive"
+    jq '.schema_version = 1 | .source.profile = "developer" | .created_at = "2020-01-01T00:00:00Z"' \
+        "$root/legacy/manifest.json" >"$root/old-manifest.json"
+    mv "$root/old-manifest.json" "$root/legacy/manifest.json"
+    tar -C "$root/legacy" -czf "$archive" manifest.json checksums.sha256 files.txt payload inventory
     openssl enc -aes-256-cbc -salt -pbkdf2 -pass "file:$password_file" -in "$archive" -out "$snapshot"
     MAC_DOTFILES_RECOVERY_PASSWORD_FILE="$password_file" run_recovery "$root" verify "$snapshot" >/dev/null
+    jq -e '.snapshot_epoch == ("2020-01-01T00:00:00Z" | fromdateiso8601) and (.verified_at | fromdateiso8601) > .snapshot_epoch' \
+        "$root/state/recovery-last-verified.json" >/dev/null || fail "verifying an old archive should preserve its original age"
 }
 
 test_link_entries_are_rejected() {
@@ -199,6 +229,7 @@ test_link_entries_are_rejected() {
 
 test_read_only_commands_without_temp_directories
 test_create_verify_inspect_and_restore
+test_last_verified_tracks_only_successful_explicit_verification
 test_corruption_is_rejected
 test_unsafe_archive_path_is_rejected
 test_outside_allowlist_is_rejected

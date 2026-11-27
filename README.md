@@ -21,65 +21,44 @@ use Node 24 on GitHub-hosted runners.
 
 ## 🚀 Quick Setup
 
-On a new Mac or an existing setup, run this command to apply the latest version from `main` and install the applications for your active profile:
+On a new Mac or an existing setup, run this command to apply the latest version from `main` and install the applications declared in the repository Brewfile:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/richeju/mac-dotfiles/main/install.sh | bash
 ```
 
-Every run checks the active profile and reinstalls missing packages, even when the Brewfile has not changed. Existing packages are not upgraded by this command; scheduled maintenance handles upgrades.
+Every run checks the Brewfile and reinstalls missing packages, even when the Brewfile has not changed. Existing packages are not upgraded by this command; scheduled maintenance handles upgrades.
 
 Kindle is installed through the Mac App Store. The final summary reports whether it is installed, requires App Store sign-in, or failed to install, with a direct command to open its App Store page. Sign in and acquire the app if needed, then rerun the quick setup command. Incomplete package installation exits with status 1 after printing the summary.
 
 ### Reproducible Setup (optional)
 
-On a new Mac, an already configured Mac, or a machine that needs repair, download and verify the reviewed bootstrap:
+To reproduce a reviewed revision, pin both the commit and the installer checksum. The example below pins a historical revision. Use Quick Setup above for the current single-Brewfile installation.
 
 ```bash
 DOTFILES_REF=690526c90a7a4f259221d488b485a1f8f3d79dae
 INSTALL_SHA256=aee26229475400b122fe9a49fa8026eb446310b9bec4f31d4d99671b604da479
-curl -fsSLo /tmp/mac-dotfiles-install.sh \
-  "https://raw.githubusercontent.com/richeju/mac-dotfiles/$DOTFILES_REF/install.sh"
-echo "$INSTALL_SHA256  /tmp/mac-dotfiles-install.sh" | shasum -a 256 -c -
-MAC_DOTFILES_REF="$DOTFILES_REF" bash /tmp/mac-dotfiles-install.sh
+
+run_reviewed_installer() (
+  installer_dir=$(mktemp -d) || exit 1
+  trap 'rm -rf "$installer_dir"' EXIT
+  cd "$installer_dir" &&
+    curl -fsSLo install.sh "https://raw.githubusercontent.com/richeju/mac-dotfiles/$DOTFILES_REF/install.sh" &&
+    printf '%s  install.sh\n' "$INSTALL_SHA256" | shasum -a 256 -c - &&
+    MAC_DOTFILES_REF="$DOTFILES_REF" bash ./install.sh "$@"
+)
 ```
 
-This optional procedure verifies the installer before execution and applies exactly the pinned commit before restoring the chezmoi source to its normal tracking branch. Rerunning it restores that version rather than the latest changes on `main`. It installs missing prerequisites, initializes or updates chezmoi, applies managed files non-interactively, repairs missing managed helpers, and then exits.
+Choose a mode. Each invocation downloads and verifies the installer before execution.
 
-When Homebrew is already installed, the installer does not request administrator privileges. A password may still be required on a fresh Mac if Homebrew or macOS command line tools need to be installed.
-
-At the end, the installer prints a compact summary of what is ready and what may still need attention, then points to `mac-dotfiles.sh repair` for post-install reconciliation.
-
-Inspect the verified script before executing it if desired:
 ```bash
-less /tmp/mac-dotfiles-install.sh
-MAC_DOTFILES_REF="$DOTFILES_REF" bash /tmp/mac-dotfiles-install.sh
+run_reviewed_installer                 # install the pinned revision
+# run_reviewed_installer --verify      # inspect readiness
+# run_reviewed_installer --minimal     # defer the bundle for this run
+# run_reviewed_installer --auto --git-name "Your Name" --git-email "you@example.com"
 ```
 
-Zero-interaction mode (for full automation):
-```bash
-MAC_DOTFILES_REF="$DOTFILES_REF" bash /tmp/mac-dotfiles-install.sh \
-  --auto --git-name "Your Name" --git-email "you@example.com"
-```
-
-Minimal mode (core setup now, full apps later):
-```bash
-MAC_DOTFILES_REF="$DOTFILES_REF" bash /tmp/mac-dotfiles-install.sh --minimal
-```
-
-Minimal mode installs/applies the core dotfiles flow but skips the full Homebrew bundle during the chezmoi run. Later, run `mac-dotfiles.sh repair` to install and reconcile all packages.
-
-Select a persistent machine profile during bootstrap:
-```bash
-MAC_DOTFILES_REF="$DOTFILES_REF" bash /tmp/mac-dotfiles-install.sh --profile developer
-```
-
-Profiles and `--minimal` are intentionally different: `--minimal` skips package installation once, while `--profile minimal` defines the persistent desired package set for that Mac.
-
-Verification mode (no changes, no sudo prompt):
-```bash
-MAC_DOTFILES_REF="$DOTFILES_REF" bash /tmp/mac-dotfiles-install.sh --verify
-```
+The installer restores the chezmoi source to its normal tracking branch after applying the pinned revision. On a fresh Mac, Homebrew or the macOS command line tools may request an administrator password. After a minimal installation, use `mac-dotfiles.sh repair` to reconcile the full package list.
 
 After installation, an optional local launcher is available for day-to-day actions:
 ```bash
@@ -129,23 +108,11 @@ Some macOS apps can still require manual approval or an administrator password d
 - **shellcheck** and **shfmt**: shell quality tooling
 - **Node.js 24**: pinned LTS JavaScript runtime
 
-## 🧭 Declarative Profiles and Convergence
+## 🧭 Package management and convergence
 
-The active profile is stored per Mac in the chezmoi configuration. `profiles/catalog.json` defines each profile's description and ordered Brewfile components; both chezmoi and the convergence engine read this catalog. Available profiles are:
+Edit `dot_Brewfile` to define the packages for this Mac. Chezmoi installs it as `~/.Brewfile`, and the installer, package hook, and convergence engine use the same list.
 
-- `minimal`: bootstrap essentials only
-- `personal`: personal applications and power-user CLI tools
-- `developer`: personal profile plus Go and Python toolchains
-- `gaming`: personal profile plus Discord and GeForce NOW
-- `full`: personal profile plus Discord and GeForce NOW; this is the backward-compatible default
-
-Changing a profile only changes the desired state. It never installs or removes anything immediately:
-
-```bash
-mac-dotfiles.sh profile list
-mac-dotfiles.sh profile set developer
-mac-dotfiles.sh plan
-```
+The list matches the former `full` profile, including Steam, Discord, and GeForce NOW. On an existing installation the next normal update applies this list and installs any missing items. An old `profile` setting in the chezmoi configuration is ignored. Extra software installed under a previous configuration, including Go and Python, stays installed during normal convergence. Use `--minimal` during bootstrap to defer package installation for that run.
 
 Inspect and apply the desired state:
 
@@ -158,7 +125,7 @@ mac-dotfiles.sh converge             # confirmed transactional apply
 mac-dotfiles.sh converge --yes       # unattended apply
 ```
 
-Each convergence creates a versioned transaction under `~/.local/state/mac-dotfiles/transactions/`. It snapshots all managed files and symlinks, the chezmoi configuration, direct Homebrew formulae, and installed casks. Blocking validation checks dotfile convergence, Homebrew dependencies, and the LaunchAgent plist.
+Each convergence creates a versioned transaction under `~/.local/state/mac-dotfiles/transactions/`. It snapshots all managed files and symlinks, the chezmoi configuration, Homebrew formulae, and installed casks. If either package inventory fails, convergence stops before applying changes. Blocking validation checks dotfile convergence, Homebrew dependencies, and the LaunchAgent plist.
 
 If an apply or validation step fails, managed files are restored automatically, files created by the failed apply are removed, newly installed direct formulae/casks are removed on a best-effort basis, and the transaction is marked `rolled_back` or `rollback_failed`. Homebrew cannot restore older package versions or application data, so package rollback is deliberately described as best effort.
 
@@ -168,7 +135,7 @@ Manual security items such as FileVault, firewall, Time Machine, and macOS updat
 
 Repository evolution is handled by sequential, idempotent scripts under `migrations/`. The current schema version is stored locally in `~/.local/state/mac-dotfiles/schema-version`; convergence applies pending migrations under the same operation lock before changing the desired state.
 
-For a stronger release or machine check, `mac-dotfiles.sh certify` runs the full test suite, formatting and static analysis, profile rendering, migration-catalog validation, transaction fault injection, and live idempotence validation. It writes a versioned JSON attestation to `~/.local/state/mac-dotfiles/certifications/`; use `--skip-live` for CI or a repository-only check.
+For a stronger release or machine check, `mac-dotfiles.sh certify` runs the full test suite, formatting and static analysis, Brewfile validation, migration-catalog validation, transaction fault injection, and live idempotence validation. It writes a versioned JSON attestation to `~/.local/state/mac-dotfiles/certifications/`; use `--skip-live` for CI or a repository-only check.
 
 Scheduled maintenance uses a certified safe-update gate instead of applying remote changes immediately. It fetches only fast-forward candidates, certifies an uncertified candidate before touching managed files, and then runs transactional convergence. A failed certification is rejected before application. A convergence failure rolls managed files and the source repository back to the previous last-known-good commit. The prior passing attestation is restored, evidence is persisted under `~/.local/state/mac-dotfiles/certified-updates/`, and Homebrew maintenance is still allowed to finish.
 
@@ -282,6 +249,8 @@ Daily automatic tasks (via macOS LaunchAgent):
 - Tailored NIST compliance evidence refresh
 - Scheduled every day at 04:00
 
+Scheduled maintenance checks the owner of the shared operation lock. It skips a run while another operation is active and resumes after an abandoned lock, recording the result in the usual maintenance status.
+
 You can disable the automatic dotfiles sync by setting `AUTO_CHEZMOI_UPDATE=0` before running the maintenance script manually.
 
 If a cask upgrade needs interactive macOS approval, rerun the specific upgrade manually after approving it in System Settings:
@@ -325,7 +294,6 @@ The launcher provides a compact numbered menu for common actions:
 - run doctor
 - run maintenance
 - show `chezmoi diff`
-- inspect or select the active profile
 - preview desired-state drift
 - run a transactional convergence
 - inspect and restore convergence transactions
@@ -352,7 +320,6 @@ mac-dotfiles.sh history
 mac-dotfiles.sh report
 mac-dotfiles.sh doctor
 mac-dotfiles.sh explain
-mac-dotfiles.sh profile current
 mac-dotfiles.sh plan
 mac-dotfiles.sh drift
 mac-dotfiles.sh converge
@@ -381,7 +348,9 @@ mac-dotfiles.sh recovery restore ~/Documents/mac-recovery.tar.gz.age --dry-run
 mac-dotfiles.sh recovery restore ~/Documents/mac-recovery.tar.gz.age --yes
 ```
 
-Snapshots use a versioned manifest and SHA-256 checksums. They contain an explicit allowlist of managed configuration, the active schema/profile metadata, and Homebrew inventories. Passwords, tokens, SSH keys, browser data, and application data are excluded. New `--encrypt` snapshots use authenticated `age` passphrase encryption. Legacy `.enc` snapshots created with OpenSSL AES-256-CBC/PBKDF2 remain readable.
+Snapshots use a versioned manifest and SHA-256 checksums. They contain an explicit allowlist of managed configuration, source and schema metadata, and Homebrew inventories. Passwords, tokens, SSH keys, browser data, and application data are excluded. New `--encrypt` snapshots use authenticated `age` passphrase encryption. Legacy `.enc` snapshots created with OpenSSL AES-256-CBC/PBKDF2 remain readable.
+
+After creating or copying an archive to its final location, run `mac-dotfiles.sh recovery verify "/path/to/archive"` once. A successful verification records the archive path and verification time on this Mac, including for an archive on a mounted pCloud or Dropbox volume. `mac-dotfiles.sh status` then shows that path, the verification time, and whether the file is accessible now. It checks file metadata without downloading the archive contents. Run `recovery verify` again for a full integrity check after moving or replacing the archive. The snapshot age is measured from creation.
 
 Without extra variables, `--encrypt` asks for an `age` passphrase on the terminal. For non-interactive automation, set `MAC_DOTFILES_RECOVERY_AGE_RECIPIENT` while creating the snapshot and `MAC_DOTFILES_RECOVERY_AGE_IDENTITY_FILE` while inspecting, verifying, or restoring it. Identity files must be owner-only. `MAC_DOTFILES_RECOVERY_PASSWORD_FILE` remains available only for legacy OpenSSL `.enc` snapshots. Snapshots and rollback artifacts are created with owner-only permissions, snapshot writes are atomic, and verification rejects duplicate/missing checksums, mismatched manifests, unsafe archive paths, link entries, and any restore target outside the documented allowlist.
 
@@ -467,9 +436,9 @@ This is the certified transactional path. Use `mac-dotfiles.sh raw-update` only 
 
 ### Adding Applications
 
-Edit the appropriate fragment under `profiles/` on GitHub or locally. For example:
+Edit the repository Brewfile on GitHub or in the chezmoi source directory.
 ```bash
-$EDITOR ~/.local/share/chezmoi/profiles/personal.Brewfile
+$EDITOR ~/.local/share/chezmoi/dot_Brewfile
 ```
 
 Then preview and converge:
@@ -484,7 +453,7 @@ The generated `~/.Brewfile` should not be edited directly.
 
 ### Brewfile Strategy
 
-This repository uses one canonical Homebrew template: `dot_Brewfile.tmpl`, composed from declarative fragments under `profiles/` and rendered by chezmoi to `~/.Brewfile`.
+The plain `dot_Brewfile` in the repository is the source of `~/.Brewfile`.
 
 The `run_onchange_install-packages-darwin.sh.tmpl` script installs from `~/.Brewfile` using:
 
@@ -492,9 +461,7 @@ The `run_onchange_install-packages-darwin.sh.tmpl` script installs from `~/.Brew
 brew bundle --global --verbose
 ```
 
-- `dot_Brewfile.tmpl` - Profile-aware template rendered to `~/.Brewfile`
-- `profiles/catalog.json` - Ordered profile definitions and descriptions shared by chezmoi and the convergence engine
-- `profiles/*.Brewfile` - Composable desired package sets
+- `dot_Brewfile` - Homebrew formulae, casks and App Store apps managed on this Mac
 - `dot_gitconfig.tmpl` - Git configuration template
 - `dot_zprofile` - Shell profile that enables Homebrew and `~/.local/bin`
 - `install.sh` - Initial installation script
@@ -506,7 +473,7 @@ brew bundle --global --verbose
 - `compliance/personal-nist-low.json` - Versioned, audit-only NIST/mSCP tailoring for a personal Mac
 - `migrations/*.sh` - Ordered, idempotent repository schema migrations
 - `dot_local/bin/executable_mac-dotfiles.sh.tmpl` - Compact launcher/menu for common workflows
-- `dot_local/bin/executable_mac-dotfiles-converge.sh.tmpl` - Profile, plan, drift, transaction, validation, and rollback engine
+- `dot_local/bin/executable_mac-dotfiles-converge.sh.tmpl` - Plan, drift, transaction, validation, and rollback engine
 - `dot_local/bin/executable_mac-dotfiles-configure-dock.sh.tmpl` - Idempotent Dock preference helper used by direct and transactional applies
 - `dot_local/bin/executable_mac-dotfiles-configure-finder-and-inputs.sh` - Idempotent Finder/input preference helper
 - `dot_local/bin/executable_mac-dotfiles-harden-macos-baseline.sh` - Idempotent macOS hardening helper
