@@ -109,6 +109,39 @@ test_persisted_maintenance_failure_survives_manual_run() {
         "$root/state/watchdog/state.json" >/dev/null || fail "persisted maintenance failure should be explicit"
 }
 
+test_maintenance_time_comes_from_the_latest_receipt() {
+    local root now receipt state cached output stamp="2026-01-15T03:04:05Z"
+    root="$(mktemp -d)"
+    now="$(date '+%s')"
+    setup_env "$root" "$now"
+    receipt="$root/state/maintenance-status.json"
+    state="$root/state/watchdog/state.json"
+
+    run_watchdog "$root" "$now" run --no-notify >/dev/null
+    cached="$(cat "$state")"
+    jq -e '.checks[] | select(.name == "maintenance" and .completed_at == null)' "$state" >/dev/null ||
+        fail "an old receipt without a timestamp must not acquire a synthetic completion time"
+
+    jq -n --arg stamp "$stamp" '{schema_version:1,exit_status:1,updated_at:$stamp}' >"$receipt"
+    output="$(run_watchdog "$root" "$now" status --json)"
+    jq -e --arg stamp "$stamp" '.status == "critical" and .updated_at != $stamp and
+        any(.checks[]; .name == "maintenance" and .status == "critical" and .completed_at == $stamp)' \
+        <<<"$output" >/dev/null || fail "cached status should show the failed maintenance run and its completion time"
+    [[ "$cached" == "$(cat "$state")" && ! -s "$root/notifications.log" ]] ||
+        fail "reading maintenance status must preserve the cache and never notify"
+
+    jq -n --arg stamp "$stamp" '{schema_version:1,exit_status:0,updated_at:$stamp}' >"$receipt"
+    MAC_DOTFILES_MAINTENANCE_EXIT_STATUS=0 run_watchdog "$root" "$now" run --no-notify >/dev/null
+    jq -e --arg stamp "$stamp" '.checks[] | select(.name == "maintenance" and .status == "healthy" and .completed_at == $stamp)' \
+        "$state" >/dev/null || fail "scheduled checks should record the actual maintenance completion time"
+
+    echo '{"schema_version":1,"exit_status":0,"updated_at":"invalid date"}' >"$receipt"
+    run_watchdog "$root" "$now" status --json | jq -e \
+        '.checks[] | select(.name == "maintenance" and .status == "healthy" and .completed_at == null)' \
+        >/dev/null || fail "a malformed timestamp must not hide the result or show a stale time"
+    rm -rf "$root"
+}
+
 test_rejected_certified_update_is_critical() {
     local root now
     root="$(mktemp -d)"
@@ -245,6 +278,7 @@ test_verified_archive_is_live_in_status() {
 test_transitions_and_cooldown
 test_stale_certification_commit_warns
 test_persisted_maintenance_failure_survives_manual_run
+test_maintenance_time_comes_from_the_latest_receipt
 test_rejected_certified_update_is_critical
 test_nist_findings_are_advisory
 test_manual_notification
