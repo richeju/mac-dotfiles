@@ -35,7 +35,7 @@ Usage: mac-dotfiles-watchdog.sh COMMAND [OPTIONS]
 
 Commands:
   run [--json] [--no-notify]  Evaluate health and update watchdog state.
-  status [--json]             Show health with current recovery archive availability.
+  status [--json]             Show health with current maintenance and recovery status.
   test [healthy|warning|critical]
                               Send a sample native notification.
 USAGE
@@ -64,21 +64,21 @@ age_seconds() {
 
 record_check() {
     local name="$1" status="$2" detail="$3"
-    jq -nc --arg name "$name" --arg status "$status" --arg detail "$detail" \
-        '{name:$name,status:$status,detail:$detail}' >>"$CHECKS_FILE"
+    jq -nc --arg name "$name" --arg status "$status" --arg detail "$detail" --arg completed_at "${4:-}" \
+        '{name:$name,status:$status,detail:$detail} + (if $completed_at == "" then {} else {completed_at:$completed_at} end)' >>"$CHECKS_FILE"
 }
 
 check_freshness() {
     local name="$1" path="$2" max_age="$3"
     local unavailable="$4" stale="$5" healthy="$6" age
     age="$(age_seconds "$path")" || {
-        record_check "$name" warning "$unavailable"
+        record_check "$name" warning "$unavailable" "${7:-}"
         return
     }
     if ((age > max_age)); then
-        record_check "$name" warning "$stale"
+        record_check "$name" warning "$stale" "${7:-}"
     else
-        record_check "$name" healthy "$healthy"
+        record_check "$name" healthy "$healthy" "${7:-}"
     fi
 }
 
@@ -249,13 +249,22 @@ check_recovery_snapshot() {
 
 check_maintenance() {
     local exit_status="${MAC_DOTFILES_MAINTENANCE_EXIT_STATUS:-}" freshness_file="$MAINTENANCE_LOG"
-    if [[ -z "$exit_status" && -f "$MAINTENANCE_STATUS_FILE" ]]; then
-        if ! jq -e '.schema_version == 1 and (.exit_status | type == "number")' "$MAINTENANCE_STATUS_FILE" >/dev/null 2>&1; then
+    local receipt recorded_status completed_at=""
+    if [[ -f "$MAINTENANCE_STATUS_FILE" ]]; then
+        if receipt="$(jq -er 'select(.schema_version == 1 and (.exit_status | type == "number"))
+            | [.exit_status, (.updated_at | select(. == (try (fromdateiso8601 | todateiso8601) catch null)))] | @tsv' \
+            "$MAINTENANCE_STATUS_FILE" 2>/dev/null)" && [[ -n "$receipt" ]]; then
+            IFS=$'\t' read -r recorded_status completed_at <<<"$receipt"
+            if [[ -z "$exit_status" || "$exit_status" == "$recorded_status" ]]; then
+                exit_status="$recorded_status"
+                freshness_file="$MAINTENANCE_STATUS_FILE"
+            else
+                completed_at=""
+            fi
+        elif [[ -z "$exit_status" ]]; then
             record_check maintenance critical "persisted maintenance status is invalid"
             return
         fi
-        exit_status="$(jq -r '.exit_status' "$MAINTENANCE_STATUS_FILE")"
-        freshness_file="$MAINTENANCE_STATUS_FILE"
     elif [[ -z "$exit_status" && -f "$MAINTENANCE_LOG" ]]; then
         if latest_maintenance_completed; then
             exit_status=0
@@ -269,17 +278,17 @@ check_maintenance() {
         return
     fi
     if [[ "$exit_status" != "0" ]]; then
-        record_check maintenance critical "maintenance exited with status $exit_status"
+        record_check maintenance critical "maintenance exited with status $exit_status" "$completed_at"
         return
     fi
     if [[ ! -f "$MAINTENANCE_LOG" ]]; then
-        record_check maintenance warning "maintenance has not produced a log"
+        record_check maintenance warning "maintenance has not produced a log" "$completed_at"
         return
     fi
     check_freshness maintenance "$freshness_file" "$MAINTENANCE_MAX_AGE" \
         "maintenance age is unavailable" \
         "maintenance has not run in $((MAINTENANCE_MAX_AGE / 86400)) days" \
-        "maintenance log is recent"
+        "maintenance log is recent" "$completed_at"
 }
 
 overall_status() {
@@ -352,14 +361,14 @@ watchdog_state() {
     CHECKS_FILE="$work/checks.jsonl"
     : >"$CHECKS_FILE"
     if [[ "$command" == status && -f "$STATE_FILE" ]]; then
-        jq -c '.checks[] | select(.name != "recovery-snapshot")' "$STATE_FILE" >"$CHECKS_FILE"
+        jq -c '.checks[] | select(.name != "recovery-snapshot" and .name != "maintenance")' "$STATE_FILE" >"$CHECKS_FILE"
     else
         check_desired_state
         check_certification
         check_certified_update
         check_compliance
-        check_maintenance
     fi
+    check_maintenance
     check_recovery_snapshot
     status="$(overall_status)"
     message="$(status_message "$status")"

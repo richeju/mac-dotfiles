@@ -163,6 +163,12 @@ mac-dotfiles.sh watch test warning     # send a sample notification
 
 Default freshness thresholds are 7 days for certification, 30 days for recovery snapshots, and 2 days for maintenance. They can be overridden with `MAC_DOTFILES_CERTIFICATION_MAX_AGE_SECONDS`, `MAC_DOTFILES_SNAPSHOT_MAX_AGE_SECONDS`, `MAC_DOTFILES_MAINTENANCE_MAX_AGE_SECONDS`, and `MAC_DOTFILES_WATCHDOG_COOLDOWN_SECONDS`.
 
+### Mac health in Raycast
+
+After applying the dotfiles, open **Raycast Settings → Extensions → + → Add Script Directory**. In the folder picker, press `⌘⇧G` and enter `~/.config/raycast/mac-dotfiles`. Add the directory once, then search for **Santé du Mac** in Raycast. [Raycast Script Commands](https://github.com/raycast/script-commands#install-script-commands-from-this-repository)
+
+The command reads `mac-dotfiles.sh status --json` and shows the overall health, the last recorded maintenance and backup verification times (UTC), the archive’s current availability, and any checks that need attention.
+
 ## ⚙️ Automatic Configurations
 
 ### Git Configuration

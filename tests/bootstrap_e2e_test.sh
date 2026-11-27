@@ -117,6 +117,7 @@ assert_install_count() {
 run_bootstrap 0
 assert_install_count 1
 [[ -x "$test_root/home/.local/bin/mac-dotfiles.sh" ]] || fail "real apply did not install the launcher"
+[[ -x "$test_root/home/.config/raycast/mac-dotfiles/sante-du-mac.sh" ]] || fail "Raycast health command was not installed as an executable"
 grep -Fq 'name = "Test User"' "$test_root/home/.config/chezmoi/chezmoi.toml" || fail "automatic Git identity was not persisted"
 [[ -f "$test_root/home/Library/LaunchAgents/com.chezmoi.mac-dotfiles.maintenance.plist" ]] || fail "LaunchAgent was not deployed into ~/Library"
 [[ ! -e "$test_root/home/.Library" ]] || fail "LaunchAgent must not create a hidden .Library directory"
