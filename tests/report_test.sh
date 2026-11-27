@@ -42,9 +42,7 @@ DOCTOR
 
     cat >"$env_dir/home/.local/bin/mac-dotfiles-converge.sh" <<'CONVERGE'
 #!/usr/bin/env bash
-if [[ "$1" == "profile" && "$2" == "current" ]]; then
-  echo "developer"
-fi
+exit 0
 CONVERGE
     chmod +x "$env_dir/home/.local/bin/mac-dotfiles-converge.sh"
 
@@ -137,14 +135,18 @@ test_report_happy_path() {
     local env_dir output
     env_dir="$(setup_env)"
     write_mocks "$env_dir"
+    mkdir "$env_dir/custom snapshots"
+    touch "$env_dir/custom snapshots/mac-recovery.tar.gz.age"
 
-    output="$(HOME="$env_dir/home" PATH="$env_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin" bash "$REPORT_SCRIPT")"
+    output="$(HOME="$env_dir/home" PATH="$env_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+        MAC_DOTFILES_SNAPSHOT_DIR="$env_dir/custom snapshots" bash "$REPORT_SCRIPT")"
 
     assert_contains "$output" "# mac-dotfiles report" "report should include title"
     assert_contains "$output" "## System" "report should include system section"
     assert_contains "$output" "- Bundle: satisfied" "report should include bundle status"
     assert_contains "$output" "## mac-dotfiles doctor report" "report should include doctor output"
-    assert_contains "$output" "Active profile: \`developer\`" "report should include active desired-state profile"
+    assert_contains "$output" "Latest transaction: none" "report should include convergence transaction status"
+    assert_contains "$output" "Snapshot in the recovery directory: mac-recovery.tar.gz.age" "report should inspect the configured directory"
     assert_contains "$output" "Certified update: success" "report should include certified-update state"
     assert_contains "$output" "NIST compliance: noncompliant (12 pass, 4 findings, 0 errors" "report should summarize NIST evidence"
     assert_contains "$output" "maintenance-ok" "report should include maintenance log"

@@ -23,6 +23,24 @@ assert_not_contains() {
     [[ "$haystack" != *"$needle"* ]] || fail "$message (unexpected: $needle)"
 }
 
+test_manifest_fingerprint() (
+    if ! command -v chezmoi >/dev/null 2>&1; then
+        echo "[SKIP] package hook rendering (chezmoi unavailable)"
+        return
+    fi
+    local work_dir expected output
+    work_dir="$(mktemp -d)"
+    trap 'rm -rf "$work_dir"' EXIT
+    mkdir "$work_dir/source" "$work_dir/home"
+    printf '[data]\nprofile = "developer"\n' >"$work_dir/config.toml"
+    printf 'brew "jq"\n' >"$work_dir/source/dot_Brewfile"
+    expected="$(shasum -a 256 "$work_dir/source/dot_Brewfile" | awk '{print $1}')"
+    output="$(chezmoi execute-template --source "$work_dir/source" \
+        --destination "$work_dir/home" --config "$work_dir/config.toml" \
+        --persistent-state "$work_dir/chezmoi.boltdb" <"$PACKAGE_HOOK")"
+    assert_contains "$output" "# Manifest SHA-256: $expected" "hook must fingerprint the canonical Brewfile"
+)
+
 test_minimal_mode_skips_brew_bundle() {
     local env_dir output
     env_dir="$(mktemp -d)"
@@ -42,6 +60,7 @@ BREW
 }
 
 main() {
+    test_manifest_fingerprint
     test_minimal_mode_skips_brew_bundle
     local output
     output="$(MAC_DOTFILES_BOOTSTRAP_PACKAGES=1 bash "$PACKAGE_HOOK")"

@@ -4,8 +4,7 @@ set -euo pipefail
 state_dir="${MAC_DOTFILES_STATE_DIR:-$HOME/.local/state/mac-dotfiles}"
 mkdir -p \
     "$state_dir/transactions" \
-    "$state_dir/transaction-rollback-backups" \
-    "$state_dir/profile-backups"
+    "$state_dir/transaction-rollback-backups"
 
 for legacy_lock in "$state_dir/maintenance.lock" "$state_dir/converge.lock"; do
     [[ -d "$legacy_lock" ]] || continue

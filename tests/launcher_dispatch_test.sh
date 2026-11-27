@@ -74,7 +74,7 @@ assert_fixed() {
 for name in safe-update certified-update compliance rollback history maintenance migrate certify recovery; do
     assert_forwarded "$name" "mac-dotfiles-$name.sh"
 done
-for name in profile plan drift converge validate transactions; do
+for name in plan drift converge validate transactions; do
     assert_forwarded "$name" mac-dotfiles-converge.sh "$name"
 done
 assert_forwarded tx-rollback mac-dotfiles-converge.sh rollback
@@ -116,7 +116,7 @@ FAIL_TOOL=mac-dotfiles-certified-update.sh run_launcher repair >/dev/null 2>&1 |
 assert_calls 'failed repair'
 
 # Menu actions must use the same routes as their CLI equivalents.
-for choice in 3 4 5 6 8 9 10 11 12 14 16 17 18 19 20; do
+for choice in 3 4 5 6 8 9 10 11 12 14 15 16 17 18 19 20; do
     case "$choice" in
         3) expect_call mac-dotfiles-safe-update.sh ;;
         4) expect_call mac-dotfiles-rollback.sh ;;
@@ -128,6 +128,7 @@ for choice in 3 4 5 6 8 9 10 11 12 14 16 17 18 19 20; do
         11) expect_call chezmoi diff ;;
         12) expect_call mac-dotfiles-converge.sh plan ;;
         14) expect_call mac-dotfiles-converge.sh converge ;;
+        15) expect_call mac-dotfiles-converge.sh validate ;;
         16) expect_call mac-dotfiles-migrate.sh plan ;;
         17) expect_call mac-dotfiles-certify.sh ;;
         18) expect_call mac-dotfiles-recovery.sh list ;;
@@ -137,10 +138,6 @@ for choice in 3 4 5 6 8 9 10 11 12 14 16 17 18 19 20; do
     printf '%s\n\n0\n' "$choice" | run_launcher menu >/dev/null
     assert_calls "menu $choice"
 done
-expect_call mac-dotfiles-converge.sh profile list
-printf '%s\0' mac-dotfiles-converge.sh profile set gaming >>"$EXPECTED_FILE"
-printf '15\ngaming\n\n0\n' | run_launcher menu >/dev/null
-assert_calls 'profile menu'
 expect_call mac-dotfiles-converge.sh drift
 printf '13\n\n0\n' | FAIL_TOOL=mac-dotfiles-converge.sh run_launcher menu >/dev/null
 assert_calls 'drift menu must remain usable after nonzero status'

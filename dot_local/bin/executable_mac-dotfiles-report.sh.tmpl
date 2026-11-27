@@ -75,7 +75,7 @@ CONVERGE_SCRIPT="$HOME/.local/bin/mac-dotfiles-converge.sh"
 TRANSACTIONS_DIR="$STATE_DIR/transactions"
 MIGRATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-migrate.sh"
 LATEST_CERTIFICATION="$STATE_DIR/certifications/latest.json"
-RECOVERY_DIR="$STATE_DIR/recovery-snapshots"
+RECOVERY_DIR="${MAC_DOTFILES_SNAPSHOT_DIR:-$STATE_DIR/recovery-snapshots}"
 WATCHDOG_STATE="$STATE_DIR/watchdog/state.json"
 CERTIFIED_UPDATE_STATE="$STATE_DIR/certified-update-state.json"
 COMPLIANCE_STATE="$STATE_DIR/compliance/latest.json"
@@ -286,8 +286,6 @@ echo
 echo "## Desired State"
 echo
 if [[ -x "$CONVERGE_SCRIPT" ]]; then
-    profile="$($CONVERGE_SCRIPT profile current 2>/dev/null || echo unknown)"
-    echo "- Active profile: \`$profile\`"
     latest_transaction=""
     if [[ -d "$TRANSACTIONS_DIR" ]]; then
         latest_transaction="$(find "$TRANSACTIONS_DIR" -mindepth 1 -maxdepth 1 -type d | sort -r | head -n 1)"
@@ -324,9 +322,9 @@ else
 fi
 latest_recovery="$(find "$RECOVERY_DIR" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tar.gz.age' -o -name '*.tar.gz.enc' \) 2>/dev/null | sort | tail -n 1 || true)"
 if [[ -n "$latest_recovery" ]]; then
-    echo "- Latest recovery snapshot: $(basename "$latest_recovery") ($(du -h "$latest_recovery" | awk '{print $1}'))"
+    echo "- Snapshot in the recovery directory: $(basename "$latest_recovery") ($(du -h "$latest_recovery" | awk '{print $1}'))"
 else
-    echo "- Latest recovery snapshot: none"
+    echo "- Snapshot in the recovery directory: none"
 fi
 if [[ -f "$WATCHDOG_STATE" ]]; then
     echo "- Watchdog: $(jq -r '"\(.status) (\(.updated_at))"' "$WATCHDOG_STATE" 2>/dev/null || echo invalid)"

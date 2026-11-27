@@ -11,7 +11,8 @@ STATE_FILE="$WATCHDOG_DIR/state.json"
 CHECKS_FILE=""
 CONVERGE_SCRIPT="${MAC_DOTFILES_CONVERGE_SCRIPT:-$HOME/.local/bin/mac-dotfiles-converge.sh}"
 CERTIFICATION_FILE="$STATE_DIR/certifications/latest.json"
-RECOVERY_DIR="$STATE_DIR/recovery-snapshots"
+RECOVERY_DIR="${MAC_DOTFILES_SNAPSHOT_DIR:-$STATE_DIR/recovery-snapshots}"
+VERIFIED_SNAPSHOT="$STATE_DIR/recovery-last-verified.json"
 MAINTENANCE_LOG="$STATE_DIR/maintenance.log"
 MAINTENANCE_STATUS_FILE="$STATE_DIR/maintenance-status.json"
 CERTIFIED_UPDATE_STATE_FILE="$STATE_DIR/certified-update-state.json"
@@ -34,7 +35,7 @@ Usage: mac-dotfiles-watchdog.sh COMMAND [OPTIONS]
 
 Commands:
   run [--json] [--no-notify]  Evaluate health and update watchdog state.
-  status [--json]             Show the last recorded watchdog state.
+  status [--json]             Show health with current recovery archive availability.
   test [healthy|warning|critical]
                               Send a sample native notification.
 USAGE
@@ -192,21 +193,58 @@ latest_maintenance_completed() {
         grep -Fq "Maintenance completed"
 }
 
-latest_snapshot() {
-    find "$RECOVERY_DIR" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tar.gz.age' -o -name '*.tar.gz.enc' \) -print 2>/dev/null | sort | tail -n 1
-}
-
 check_recovery_snapshot() {
-    local snapshot
-    snapshot="$(latest_snapshot || true)"
-    if [[ -z "$snapshot" ]]; then
-        record_check recovery-snapshot warning "no recovery snapshot found"
+    local snapshot="" candidate verified_at recorded_attributes attributes snapshot_epoch record
+    local status=warning detail accessible=false
+    if [[ ! -f "$VERIFIED_SNAPSHOT" ]]; then
+        for candidate in "$RECOVERY_DIR"/*.tar.gz "$RECOVERY_DIR"/*.tar.gz.age "$RECOVERY_DIR"/*.tar.gz.enc; do
+            [[ -f "$candidate" ]] || continue
+            [[ -n "$snapshot" && ! "$candidate" -nt "$snapshot" ]] || snapshot="$candidate"
+        done
+        detail="no verified recovery snapshot recorded"
+        if [[ -n "$snapshot" ]]; then
+            detail="snapshot found; run recovery verify: $snapshot"
+        fi
+        record_check recovery-snapshot warning "$detail"
         return
     fi
-    check_freshness recovery-snapshot "$snapshot" "$SNAPSHOT_MAX_AGE" \
-        "snapshot age is unavailable" \
-        "latest snapshot is older than $((SNAPSHOT_MAX_AGE / 86400)) days" \
-        "recovery snapshot is recent"
+
+    if ! record="$(jq -ce 'select(.schema_version == 1 and (.path | startswith("/")) and
+        (.verified_at | fromdateiso8601 | type == "number") and
+        (.snapshot_epoch | type == "number" and floor == .) and
+        (.attributes | test("^[0-9]+:[0-9]+$")))' "$VERIFIED_SNAPSHOT" 2>/dev/null)" || [[ -z "$record" ]]; then
+        record_check recovery-snapshot warning "invalid recovery verification record; run recovery verify again"
+        return
+    fi
+    snapshot="$(jq -r '.path' <<<"$record")"
+    verified_at="$(jq -r '.verified_at' <<<"$record")"
+    snapshot_epoch="$(jq -r '.snapshot_epoch' <<<"$record")"
+    recorded_attributes="$(jq -r '.attributes' <<<"$record")"
+    if [[ ! -f "$snapshot" || ! -r "$snapshot" ]]; then
+        detail="archive is unavailable"
+    else
+        accessible=true
+        # Only read metadata here so a status check does not download a cloud archive.
+        if [[ "$(uname -s)" == Darwin ]]; then
+            attributes="$(stat -Lf '%z:%m' "$snapshot" 2>/dev/null)" || attributes=""
+        else
+            attributes="$(stat -Lc '%s:%Y' "$snapshot" 2>/dev/null)" || attributes=""
+        fi
+        if [[ -z "$attributes" ]]; then
+            detail="archive metadata is unavailable"
+        elif [[ "$attributes" != "$recorded_attributes" ]]; then
+            detail="archive changed; run recovery verify again"
+        elif (($(now_epoch) - snapshot_epoch > SNAPSHOT_MAX_AGE)); then
+            detail="archive is accessible but older than $((SNAPSHOT_MAX_AGE / 86400)) days"
+        else
+            status=healthy
+            detail="archive is accessible"
+        fi
+    fi
+    jq -nc --arg status "$status" --arg detail "$detail" --arg path "$snapshot" \
+        --arg verified_at "$verified_at" --argjson accessible "$accessible" \
+        '{name:"recovery-snapshot",status:$status,path:$path,verified_at:$verified_at,accessible:$accessible,
+          detail:($detail + " (last verified " + $verified_at + "): " + $path)}' >>"$CHECKS_FILE"
 }
 
 check_maintenance() {
@@ -294,60 +332,64 @@ render_text() {
     jq -r '"mac-dotfiles watchdog: \(.status)\nUpdated: \(.updated_at)\n", (.checks[] | "  \(.status | ascii_upcase)\t\(.name) — \(.detail)")' "$1"
 }
 
-run_watchdog() {
-    local work status message notified=false previous_notified=0 now timestamp
+watchdog_state() {
+    local command="$1" work status message notified=false previous_notified=0 now timestamp
+    shift
     while (($#)); do
         case "$1" in
             --json) JSON_MODE=1 ;;
-            --no-notify) NOTIFY=0 ;;
-            *) die "Unknown run option: $1" 2 ;;
+            --no-notify)
+                [[ "$command" == run ]] || die "Unknown status option: $1" 2
+                NOTIFY=0
+                ;;
+            *) die "Unknown $command option: $1" 2 ;;
         esac
         shift
     done
     command -v jq >/dev/null 2>&1 || die "jq is required"
-    mkdir -p "$WATCHDOG_DIR"
-    chmod 700 "$WATCHDOG_DIR"
     work="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-watchdog.XXXXXX")"
     WORK_DIR="$work"
     CHECKS_FILE="$work/checks.jsonl"
     : >"$CHECKS_FILE"
-    check_desired_state
-    check_certification
-    check_certified_update
-    check_compliance
+    if [[ "$command" == status && -f "$STATE_FILE" ]]; then
+        jq -c '.checks[] | select(.name != "recovery-snapshot")' "$STATE_FILE" >"$CHECKS_FILE"
+    else
+        check_desired_state
+        check_certification
+        check_certified_update
+        check_compliance
+        check_maintenance
+    fi
     check_recovery_snapshot
-    check_maintenance
     status="$(overall_status)"
     message="$(status_message "$status")"
     now="$(now_epoch)"
     timestamp="$(date -u -r "$now" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$now" '+%Y-%m-%dT%H:%M:%SZ')"
     [[ ! -f "$STATE_FILE" ]] || previous_notified="$(jq -r '.last_notified_at // 0' "$STATE_FILE" 2>/dev/null || echo 0)"
-    if [[ "$NOTIFY" -eq 1 ]] && should_notify "$status"; then
+    if [[ "$command" == run && "$NOTIFY" -eq 1 ]] && should_notify "$status"; then
         send_notification "$status" "$message"
         notified=true
         previous_notified="$now"
     fi
-    jq -s \
-        --arg status "$status" --arg message "$message" --arg updated_at "$timestamp" \
-        --argjson updated_at_epoch "$now" --argjson last_notified_at "$previous_notified" --argjson notified "$notified" \
-        '{schema_version:1,status:$status,message:$message,updated_at:$updated_at,updated_at_epoch:$updated_at_epoch,last_notified_at:$last_notified_at,notified:$notified,checks:.}' \
-        "$CHECKS_FILE" >"$work/state.json"
-    mv "$work/state.json" "$STATE_FILE"
-    chmod 600 "$STATE_FILE"
-    if [[ "$JSON_MODE" -eq 1 ]]; then cat "$STATE_FILE"; else render_text "$STATE_FILE"; fi
-    rm -rf "$work"
-    WORK_DIR=""
-    [[ "$status" != "critical" ]]
-}
-
-show_status() {
-    case "${1:-}" in
-        "") ;;
-        --json) JSON_MODE=1 ;;
-        *) die "Unknown status option: $1" 2 ;;
-    esac
-    [[ -f "$STATE_FILE" ]] || die "No watchdog state found; run: mac-dotfiles.sh watch run"
-    if [[ "$JSON_MODE" -eq 1 ]]; then cat "$STATE_FILE"; else render_text "$STATE_FILE"; fi
+    if [[ "$command" == status && -f "$STATE_FILE" ]]; then
+        jq --arg status "$status" --arg message "$message" --slurpfile checks "$CHECKS_FILE" \
+            '. + {status:$status,message:$message,checks:$checks}' "$STATE_FILE" >"$work/state.json"
+    else
+        jq -s \
+            --arg status "$status" --arg message "$message" --arg updated_at "$timestamp" \
+            --argjson updated_at_epoch "$now" --argjson last_notified_at "$previous_notified" --argjson notified "$notified" \
+            '{schema_version:1,status:$status,message:$message,updated_at:$updated_at,updated_at_epoch:$updated_at_epoch,last_notified_at:$last_notified_at,notified:$notified,checks:.}' \
+            "$CHECKS_FILE" >"$work/state.json"
+    fi
+    if [[ "$command" == run ]]; then
+        mkdir -p "$WATCHDOG_DIR"
+        chmod 700 "$WATCHDOG_DIR"
+        chmod 600 "$work/state.json"
+        cp "$work/state.json" "$WATCHDOG_DIR/state.tmp.$$"
+        mv "$WATCHDOG_DIR/state.tmp.$$" "$STATE_FILE"
+    fi
+    if [[ "$JSON_MODE" -eq 1 ]]; then cat "$work/state.json"; else render_text "$work/state.json"; fi
+    [[ "$command" == status || "$status" != "critical" ]]
 }
 
 test_notification() {
@@ -365,8 +407,7 @@ test_notification() {
 command="${1:-status}"
 shift || true
 case "$command" in
-    run) run_watchdog "$@" ;;
-    status) show_status "$@" ;;
+    run | status) watchdog_state "$command" "$@" ;;
     test) test_notification "$@" ;;
     help | -h | --help) usage ;;
     *) die "Unknown watchdog command: $command" 2 ;;

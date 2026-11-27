@@ -2,12 +2,10 @@
 {{- if not $name -}}{{- $name = promptStringOnce . "name" "Full name" -}}{{- end -}}
 {{- $email := index . "email" | default (env "GIT_EMAIL") -}}
 {{- if not $email -}}{{- $email = promptStringOnce . "email" "Email address" -}}{{- end -}}
-{{- $profile := env "MAC_DOTFILES_PROFILE" | default (index . "profile") | default "full" -}}
 
 [data]
 name = {{ $name | quote }}
 email = {{ $email | quote }}
-profile = {{ $profile | quote }}
 
 # === CUSTOM CONFIG HERE ===
 dock = { 

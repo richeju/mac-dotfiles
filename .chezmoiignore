@@ -8,9 +8,11 @@ install.sh
 lib/
 compliance/
 migrations/
-profiles/
 skills/
 tests/
+
+# Keep any local Brewfile fragments from older checkouts out of the home directory.
+profiles/
 
 # Ignore sensitive files
 .ssh/

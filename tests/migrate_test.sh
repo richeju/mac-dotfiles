@@ -49,7 +49,7 @@ test_apply_is_ordered_and_idempotent() {
     root="$(setup_env)"
     output="$(run_migrator "$root" apply)"
     [[ "$(cat "$root/home/.local/state/mac-dotfiles/schema-version")" == "2" ]] || fail "schema should advance to version 2"
-    grep -Fq 'profile = "full"' "$root/home/.config/chezmoi/chezmoi.toml" || fail "migration 1 should initialize profile"
+    ! grep -Fq 'profile =' "$root/home/.config/chezmoi/chezmoi.toml" || fail "new installations should not initialize a machine profile"
     [[ -d "$root/home/.local/state/mac-dotfiles/transactions" ]] || fail "migration 2 should create state layout"
     [[ "$(grep -c '^=====' "$root/home/.local/state/mac-dotfiles/migrations.log")" -eq 2 ]] || fail "each migration should be logged once"
 

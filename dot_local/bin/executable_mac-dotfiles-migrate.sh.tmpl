@@ -97,18 +97,7 @@ print_plan() {
 
 acquire_lock() {
     mkdir -p "$STATE_DIR"
-    if mkdir "$LOCK_DIR" 2>/dev/null; then
-        echo "$$" >"$LOCK_DIR/pid"
-        return
-    fi
-    owner=""
-    [[ -f "$LOCK_DIR/pid" ]] && owner="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
-    if [[ "$owner" =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null; then
-        die "Another mac-dotfiles operation is running (PID $owner)" 1
-    fi
-    rm -rf "$LOCK_DIR"
-    mkdir "$LOCK_DIR"
-    echo "$$" >"$LOCK_DIR/pid"
+    /usr/bin/perl "$(dirname "${BASH_SOURCE[0]}")/mac-dotfiles-claim-lock.pl" "$LOCK_DIR" "$$" || exit $?
 }
 
 release_lock() { rm -rf "$LOCK_DIR"; }

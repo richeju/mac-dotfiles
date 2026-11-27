@@ -121,8 +121,79 @@ test_no_available_work_fails() {
         fail "failed maintenance should persist its status"
 }
 
+test_stale_operation_lock_recovers() {
+    local env_dir lock output
+    env_dir="$(setup_env)"
+    lock="$env_dir/home/.local/state/mac-dotfiles/operation.lock"
+    mkdir "$lock"
+    echo 2147483647 >"$lock/pid"
+    printf '#!/bin/sh\nexit 0\n' >"$env_dir/home/.local/bin/brew"
+    chmod +x "$env_dir/home/.local/bin/brew"
+
+    output="$(HOME="$env_dir/home" AUTO_CHEZMOI_UPDATE=0 bash "$MAINTENANCE_SCRIPT" 2>&1)"
+    [[ "$output" == *"Recovering abandoned"* && "$output" == *"brew-maintenance-called"* ]] ||
+        fail "a dead owner should allow maintenance to recover and run"
+    [[ "$output" == *"watchdog-called:0"* && ! -e "$lock" ]] ||
+        fail "recovered maintenance must update the watchdog and release the lock"
+    jq -e '.exit_status == 0' "${lock%/*}/maintenance-status.json" >/dev/null ||
+        fail "a recovered run must persist its result"
+}
+
+test_live_and_initializing_locks_are_preserved() {
+    local env_dir lock output
+    env_dir="$(setup_env)"
+    lock="$env_dir/home/.local/state/mac-dotfiles/operation.lock"
+    mkdir "$lock"
+    output="$(HOME="$env_dir/home" bash "$MAINTENANCE_SCRIPT" 2>&1)"
+    [[ "$output" == *"Skipping maintenance"* && ! -f "$lock/pid" ]] ||
+        fail "maintenance must allow a live owner to publish its PID"
+    echo "$$" >"$lock/pid"
+    output="$(HOME="$env_dir/home" bash "$MAINTENANCE_SCRIPT" 2>&1)"
+    [[ "$output" == *"Skipping maintenance"* && "$(cat "$lock/pid")" == "$$" ]] ||
+        fail "maintenance must leave the live owner's PID intact"
+    [[ ! -f "${lock%/*}/maintenance-status.json" ]] ||
+        fail "a skipped run must preserve the previous maintenance status"
+}
+
+test_reused_pid_does_not_block_recovery() {
+    local env_dir lock
+    env_dir="$(setup_env)"
+    lock="$env_dir/home/.local/state/mac-dotfiles/operation.lock"
+    mkdir "$lock"
+    echo "$$" >"$lock/pid"
+    touch -t 200001010000 "$lock/pid"
+    /usr/bin/perl "$REPO_ROOT/dot_local/bin/mac-dotfiles-claim-lock.pl" "$lock" "$$" \
+        2>"$env_dir/claim.log" || fail "a PID reused since the lock was written must not block recovery"
+    grep -q 'Recovering abandoned' "$env_dir/claim.log" || fail "PID reuse should be reported"
+}
+
+test_concurrent_recovery_has_one_owner() {
+    local env_dir lock index status
+    env_dir="$(setup_env)"
+    lock="$env_dir/home/.local/state/mac-dotfiles/operation.lock"
+    mkdir "$lock"
+    touch -t 200001010000 "$lock"
+    for index in 1 2 3 4; do
+        (
+            status=0
+            /usr/bin/perl "$REPO_ROOT/dot_local/bin/mac-dotfiles-claim-lock.pl" "$lock" "$$" \
+                2>"$env_dir/$index.log" || status=$?
+            echo "$status" >"$env_dir/$index.result"
+        ) &
+    done
+    wait
+    [[ "$(grep -lx 0 "$env_dir"/*.result | wc -l | tr -d ' ')" == 1 ]] ||
+        fail "exactly one contender should adopt an old lock with a missing PID"
+    [[ "$(grep -lx 1 "$env_dir"/*.result | wc -l | tr -d ' ')" == 3 ]] ||
+        fail "the other contenders must respect the new owner"
+}
+
 test_launchd_path_finds_managed_tools
 test_failed_certified_update_fails_maintenance_after_other_work
 test_compliance_findings_are_advisory
 test_no_available_work_fails
+test_stale_operation_lock_recovers
+test_live_and_initializing_locks_are_preserved
+test_reused_pid_does_not_block_recovery
+test_concurrent_recovery_has_one_owner
 echo "[PASS] maintenance tests completed"

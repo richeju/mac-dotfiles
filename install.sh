@@ -10,8 +10,6 @@ VERIFY_MODE="false"
 MINIMAL_MODE="false"
 GIT_NAME="${GIT_NAME:-}"
 GIT_EMAIL="${GIT_EMAIL:-}"
-PROFILE="${MAC_DOTFILES_PROFILE:-full}"
-PROFILE_SET=0
 DOTFILES_REF="${MAC_DOTFILES_REF:-main}"
 HOMEBREW_INSTALL_COMMIT="cced90146ea6d3057c03a636b668fef177415eb3"
 HOMEBREW_INSTALL_SHA256="12479a24be3f5307eecac7cde670fad7118640f031229e964f544b1367b52a41"
@@ -26,7 +24,6 @@ Options:
   --verify               Check current machine readiness without changing anything
   --git-name <name>      Git user name (required with --auto if GIT_NAME env not set)
   --git-email <email>    Git user email (required with --auto if GIT_EMAIL env not set)
-  --profile <name>       Persistent profile: minimal, personal, developer, gaming, or full
   --ref <ref>            Apply a reviewed branch, tag, or 40-character commit
   -h, --help             Show this help
 USAGE
@@ -63,13 +60,8 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --profile)
-            [[ $# -lt 2 ]] && {
-                echo "Missing value for --profile"
-                exit 1
-            }
-            PROFILE="$2"
-            PROFILE_SET=1
-            shift 2
+            echo "Machine profiles have been retired. Omit --profile to use the shared Brewfile, or use --minimal to skip packages for this run." >&2
+            exit 1
             ;;
         --ref)
             [[ $# -lt 2 ]] && {
@@ -91,14 +83,6 @@ while [[ $# -gt 0 ]]; do
     esac
 
 done
-
-case "$PROFILE" in
-    minimal | personal | developer | gaming | full) ;;
-    *)
-        echo "Unknown profile: $PROFILE" >&2
-        exit 1
-        ;;
-esac
 
 if [[ ! "$DOTFILES_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ || "$DOTFILES_REF" == *..* ]]; then
     echo "Unsafe dotfiles ref: $DOTFILES_REF" >&2
@@ -616,7 +600,7 @@ apply_reviewed_dotfiles_ref() {
     original_branch="$(git -C "$source_dir" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
     original_commit="$(git -C "$source_dir" rev-parse HEAD)"
     git -C "$source_dir" switch --detach "$target" >/dev/null
-    GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" \
+    GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" \
         chezmoi apply --force --no-tty </dev/null || status=$?
 
     if [[ -n "$original_branch" ]]; then
@@ -643,10 +627,10 @@ else
     if [[ "$AUTO_MODE" == "true" ]]; then
         log_info "Running in auto mode (non-interactive)"
         if [[ "$DOTFILES_REF" == "main" ]]; then
-            GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" \
+            GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" \
                 chezmoi init --apply --no-tty richeju/mac-dotfiles </dev/null
         else
-            GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" \
+            GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" \
                 chezmoi init --no-tty richeju/mac-dotfiles </dev/null
         fi
     else
@@ -664,10 +648,10 @@ else
             fi
         fi
         if [[ "$DOTFILES_REF" == "main" ]]; then
-            GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" \
+            GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" \
                 chezmoi init --apply richeju/mac-dotfiles </dev/null
         else
-            GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" MAC_DOTFILES_PROFILE="$PROFILE" \
+            GIT_NAME="$GIT_NAME" GIT_EMAIL="$GIT_EMAIL" \
                 chezmoi init richeju/mac-dotfiles </dev/null
         fi
     fi
@@ -680,14 +664,6 @@ fi
 MIGRATE_SCRIPT="$HOME/.local/bin/mac-dotfiles-migrate.sh"
 if [[ -x "$MIGRATE_SCRIPT" ]]; then
     "$MIGRATE_SCRIPT" apply
-fi
-
-PROFILE_SCRIPT="$HOME/.local/bin/mac-dotfiles-converge.sh"
-if [[ "$PROFILE_SET" -eq 1 && -x "$PROFILE_SCRIPT" ]]; then
-    if [[ "$($PROFILE_SCRIPT profile current)" != "$PROFILE" ]]; then
-        "$PROFILE_SCRIPT" profile set "$PROFILE"
-        MAC_DOTFILES_MINIMAL="${MAC_DOTFILES_MINIMAL:-0}" chezmoi apply --force --no-tty </dev/null
-    fi
 fi
 
 reconcile_packages

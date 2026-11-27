@@ -8,7 +8,6 @@ unset MAC_DOTFILES_LOCK_HELD
 
 SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
 STATE_DIR="${MAC_DOTFILES_STATE_DIR:-$HOME/.local/state/mac-dotfiles}"
-ENGINE="$SOURCE_DIR/dot_local/bin/executable_mac-dotfiles-converge.sh.tmpl"
 MIGRATOR="$SOURCE_DIR/dot_local/bin/executable_mac-dotfiles-migrate.sh.tmpl"
 COMPLIANCE_SCRIPT="$SOURCE_DIR/dot_local/bin/executable_mac-dotfiles-compliance.sh.tmpl"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mac-dotfiles-certify.XXXXXX")"
@@ -25,7 +24,7 @@ usage() {
     cat <<'USAGE'
 Usage: mac-dotfiles-certify.sh [--json|--markdown] [--output PATH] [--skip-live]
 
-Runs repository, profile, migration, transaction, formatting, and optional live
+Runs repository, Brewfile, migration, transaction, formatting, and optional live
 desired-state checks, then emits a versioned certification attestation.
 USAGE
 }
@@ -81,21 +80,6 @@ run_check() {
     fi
 }
 
-check_profiles() {
-    local profile manifest duplicates names count=0
-    [[ -x "$ENGINE" || -f "$ENGINE" ]] || return 1
-    names="$(CHEZMOI_SOURCE_DIR="$SOURCE_DIR" bash "$ENGINE" profile list)" || return 1
-    while read -r profile _; do
-        manifest="$TMP_DIR/$profile.Brewfile"
-        CHEZMOI_SOURCE_DIR="$SOURCE_DIR" bash "$ENGINE" profile show "$profile" >"$manifest"
-        grep -Eq '^(brew|cask) "' "$manifest" || return 1
-        duplicates="$(awk '/^(brew|cask) "/ {key=$1 ":" $2; gsub(/"/, "", key); print key}' "$manifest" | sort | uniq -d)"
-        [[ -z "$duplicates" ]] || return 1
-        count=$((count + 1))
-    done <<<"$names"
-    echo "$count profiles rendered without duplicate entries"
-}
-
 check_migration_catalog() {
     local root="$TMP_DIR/migration-catalog"
     mkdir -p "$root/home/.config/chezmoi" "$root/source"
@@ -116,7 +100,8 @@ check_live_state() {
     echo "installed Mac is converged and validation passed"
 }
 
-run_check "test-suite" env -u CHEZMOI_SOURCE_DIR MAC_DOTFILES_CERTIFY_CHILD=1 bash "$SOURCE_DIR/tests/test_suite.sh"
+run_check "test-suite" env -u CHEZMOI_SOURCE_DIR -u MAC_DOTFILES_STATE_DIR -u MAC_DOTFILES_SNAPSHOT_DIR \
+    MAC_DOTFILES_CERTIFY_CHILD=1 bash "$SOURCE_DIR/tests/test_suite.sh"
 if command -v shellcheck >/dev/null 2>&1; then
     run_check "shellcheck" bash "$SOURCE_DIR/tests/shell_quality.sh" shellcheck
 else
@@ -127,7 +112,7 @@ if command -v shfmt >/dev/null 2>&1; then
 else
     record_check "shfmt" "skip" "shfmt is not installed"
 fi
-run_check "profiles" check_profiles
+run_check "brewfile" bash "$SOURCE_DIR/tests/manifest_test.sh"
 run_check "migration-catalog" check_migration_catalog
 run_check "compliance-catalog" bash "$COMPLIANCE_SCRIPT" validate-catalog
 run_check "transaction-faults" bash "$SOURCE_DIR/tests/converge_test.sh"

@@ -17,9 +17,8 @@ setup_env() {
     local root
     root="$(mktemp -d)"
     mkdir -p "$root/home/.config/chezmoi" "$root/home/.local/state/mac-dotfiles" \
-        "$root/home/.local/bin" "$root/source/profiles" "$root/bin"
-    cp "$REPO_ROOT"/profiles/*.Brewfile "$root/source/profiles/"
-    cp "$REPO_ROOT/profiles/catalog.json" "$root/source/profiles/"
+        "$root/home/.local/bin" "$root/source" "$root/bin"
+    cp "$REPO_ROOT/dot_Brewfile" "$root/source/"
     cat >"$root/home/.config/chezmoi/chezmoi.toml" <<'CONFIG'
 [data]
 name = "Test"
@@ -28,9 +27,7 @@ profile = "full"
 CONFIG
     echo original >"$root/home/.gitconfig"
 
-    HOME="$root/home" CHEZMOI_SOURCE_DIR="$root/source" \
-        MAC_DOTFILES_CONFIG_FILE="$root/home/.config/chezmoi/chezmoi.toml" \
-        bash "$ENGINE" profile show full >"$root/home/.Brewfile"
+    cp "$root/source/dot_Brewfile" "$root/home/.Brewfile"
     write_mocks "$root"
     echo "$root"
 }
@@ -54,9 +51,7 @@ case "$1" in
     echo changed >"$HOME/.gitconfig"
     mkdir -p "$HOME/.local"
     echo generated >"$HOME/.local/generated-by-apply"
-    profile="$(awk -F'"' '/^[[:space:]]*profile[[:space:]]*=/ {print $2}' "$MAC_DOTFILES_CONFIG_FILE")"
-    HOME="$HOME" CHEZMOI_SOURCE_DIR="$CHEZMOI_SOURCE_DIR" MAC_DOTFILES_CONFIG_FILE="$MAC_DOTFILES_CONFIG_FILE" \
-      bash "$ENGINE_UNDER_TEST" profile show "${profile:-full}" >"$HOME/.Brewfile"
+    cp "$CHEZMOI_SOURCE_DIR/dot_Brewfile" "$HOME/.Brewfile"
     rm -f "$TEST_ROOT/dirty"
     [[ ! -f "$TEST_ROOT/chezmoi-fail" ]]
     ;;
@@ -83,14 +78,17 @@ fi
 if [[ "$1" == "bundle" && "$2" == "cleanup" ]]; then
   exit 0
 fi
-if [[ "$1" == "leaves" ]]; then
-  exit 0
-fi
-if [[ "$1" == "list" && "${2:-}" == "--cask" ]]; then
-  exit 0
+if [[ "$1" == "list" ]]; then
+  stage=before
+  [[ ! -f "$TEST_ROOT/commands.log" ]] || stage=after
+  kind="$2"
+  outputs="$TEST_ROOT/$stage-${kind#--}"
+  [[ ! -f "$outputs" ]] || cat "$outputs"
+  [[ ! -f "$outputs-fails" ]]
+  exit $?
 fi
 if [[ "$1" == "uninstall" || "$1" == "autoremove" ]]; then
-  exit 0
+  echo "brew $* (no-autoremove=${HOMEBREW_NO_AUTOREMOVE:-0})" >>"$TEST_ROOT/commands.log"
 fi
 exit 0
 MOCK
@@ -119,34 +117,10 @@ run_engine() {
     local root="$1"
     shift
     HOME="$root/home" TEST_ROOT="$root" CHEZMOI_SOURCE_DIR="$root/source" \
-        ENGINE_UNDER_TEST="$ENGINE" \
         MAC_DOTFILES_CONFIG_FILE="$root/home/.config/chezmoi/chezmoi.toml" \
         MAC_DOTFILES_STATE_DIR="$root/home/.local/state/mac-dotfiles" \
         MAC_DOTFILES_RUN_ID="20260101-120000-test" \
         PATH="$root/bin:/usr/bin:/bin:/usr/sbin:/sbin" bash "$ENGINE" "$@"
-}
-
-test_profiles_are_declarative_and_persistent() {
-    local root output status
-    root="$(setup_env)"
-    output="$(run_engine "$root" profile list)"
-    assert_contains "$output" "full" "profile list should include full"
-    assert_contains "$output" "(active)" "profile list should mark active profile"
-
-    run_engine "$root" profile set developer >/dev/null
-    [[ "$(run_engine "$root" profile current)" == "developer" ]] || fail "profile set should persist"
-    output="$(run_engine "$root" profile show developer)"
-    assert_contains "$output" 'brew "age"' "developer profile should inherit core recovery encryption tools"
-    assert_contains "$output" 'brew "go"' "developer profile should include Go"
-    assert_contains "$output" 'cask "balenaetcher"' "developer profile should inherit personal USB imaging tools"
-    assert_contains "$output" 'cask "zerotier-one"' "developer profile should inherit personal mesh VPN tools"
-    [[ "$output" != *'nvidia-geforce-now'* ]] || fail "developer profile should not include gaming casks"
-
-    set +e
-    run_engine "$root" profile show ../../etc >/dev/null 2>&1
-    status=$?
-    set -e
-    [[ "$status" -eq 2 ]] || fail "unknown or traversal-like profiles should be rejected"
 }
 
 test_plan_is_read_only_and_drift_has_stable_codes() {
@@ -221,14 +195,58 @@ test_failure_restores_files_and_absent_targets() {
     grep -Fqx "status=rolled_back" "$status_file" || fail "transaction should record rollback"
 }
 
-test_converge_can_switch_profile_transactionally() {
+test_converge_installs_the_same_brewfile_on_an_existing_mac() {
     local root output
     root="$(setup_env)"
-    output="$(run_engine "$root" converge --profile developer --yes)"
-    assert_contains "$output" "Convergence completed" "profile convergence should complete"
-    [[ "$(run_engine "$root" profile current)" == "developer" ]] || fail "converge should persist selected profile"
-    grep -Fq 'brew "go"' "$root/home/.Brewfile" || fail "developer Brewfile should be rendered"
-    ! grep -Fq 'nvidia-geforce-now' "$root/home/.Brewfile" || fail "developer Brewfile should exclude gaming casks"
+    printf '[data]\nprofile = "developer"\n' >"$root/home/.config/chezmoi/chezmoi.toml"
+    printf 'brew "go"\n' >"$root/home/.Brewfile"
+    output="$(run_engine "$root" plan --json)"
+    jq -e '.drift and .actions.brewfile' <<<"$output" >/dev/null || fail "old Brewfile should show drift"
+    run_engine "$root" converge --yes >/dev/null
+    cmp "$root/home/.Brewfile" "$root/source/dot_Brewfile" || fail "old configurations must receive the same Brewfile"
+    ! grep -Eq 'uninstall|autoremove|cleanup' "$root/commands.log" || fail "migration must preserve existing packages"
+}
+
+test_missing_inventory_stops_convergence() {
+    local root kind
+    for kind in cask formula; do
+        root="$(setup_env)"
+        touch "$root/dirty" "$root/before-$kind-fails"
+        echo truncated-output >"$root/before-$kind"
+        if run_engine "$root" converge --yes >"$root/output" 2>&1; then
+            fail "incomplete $kind inventory must fail convergence"
+        fi
+        [[ ! -f "$root/commands.log" ]] || fail "inventory failure must stop before applying changes"
+        jq -e '.status == "snapshot_failed"' "$root/home/.local/state/mac-dotfiles/transactions/20260101-120000-test/state.json" >/dev/null ||
+            fail "failed inventory must produce a visible transaction state"
+        if run_engine "$root" rollback latest --yes >"$root/output" 2>&1; then
+            fail "incomplete inventory must not create a restorable snapshot"
+        fi
+    done
+}
+
+test_package_rollback_uses_complete_inventories() {
+    local root status
+    root="$(setup_env)"
+    touch "$root/dirty" "$root/brew-fail"
+    echo preexisting-formula >"$root/before-formula"
+    echo preexisting-app >"$root/before-cask"
+    printf 'added-formula\npreexisting-formula\n' >"$root/after-formula"
+    printf 'added-app\npreexisting-app\n' >"$root/after-cask"
+    status=0
+    run_engine "$root" converge --yes >/dev/null 2>&1 || status=$?
+    [[ "$status" == 1 ]] || fail "expected successful rollback after failed install"
+    grep -Fqx 'brew uninstall --formula added-formula (no-autoremove=1)' "$root/commands.log" || fail "expected rollback of newly requested formula"
+    grep -Fqx 'brew uninstall --cask added-app (no-autoremove=1)' "$root/commands.log" || fail "expected rollback of newly installed app"
+    ! grep -Eq 'uninstall.*preexisting|^brew autoremove' "$root/commands.log" || fail "rollback must only remove newly installed packages"
+
+    root="$(setup_env)"
+    touch "$root/dirty" "$root/brew-fail" "$root/after-cask-fails"
+    echo added-formula >"$root/after-formula"
+    status=0
+    run_engine "$root" converge --yes >/dev/null 2>&1 || status=$?
+    [[ "$status" == 3 ]] || fail "failed rollback inventory must report incomplete rollback"
+    ! grep -Eq 'uninstall|autoremove' "$root/commands.log" || fail "both post-install inventories must succeed before removing any package"
 }
 
 test_incomplete_rollback_returns_distinct_status() {
@@ -283,11 +301,12 @@ test_manual_transaction_rollback_restores_snapshot() {
         fail "manual rollback should preserve the current files first"
 }
 
-test_profiles_are_declarative_and_persistent
 test_plan_is_read_only_and_drift_has_stable_codes
 test_converge_success_records_transaction
 test_failure_restores_files_and_absent_targets
-test_converge_can_switch_profile_transactionally
+test_converge_installs_the_same_brewfile_on_an_existing_mac
+test_missing_inventory_stops_convergence
+test_package_rollback_uses_complete_inventories
 test_incomplete_rollback_returns_distinct_status
 test_live_lock_refuses_second_convergence
 test_inherited_lock_is_preserved

@@ -1,0 +1,34 @@
+brew "age"                    # Modern file encryption for recovery kits
+brew "chezmoi"                # Dotfiles manager
+brew "gh"                     # GitHub CLI
+brew "jq"                     # JSON processor
+brew "ripgrep"                # Fast recursive search
+
+brew "bat"                    # Syntax-highlighted cat replacement
+brew "fzf"                    # Fuzzy finder
+brew "htop"                   # Process viewer
+brew "node@24"                # Node.js LTS runtime
+brew "shellcheck"             # Shell static analysis
+brew "shfmt"                  # Shell formatter
+brew "tree"                   # Directory tree viewer
+brew "yq"                     # YAML processor
+brew "zoxide"                 # Smarter directory navigation
+
+brew "mas"                    # Mac App Store CLI for Kindle
+
+cask "balenaetcher"            # Flash bootable OS images to USB drives
+cask "bitwarden"              # Password manager
+cask "chatgpt"                # OpenAI ChatGPT desktop app
+cask "dropbox"                # Cloud storage
+cask "raycast"                # Productivity launcher
+cask "signal"                 # Messaging app
+cask "shottr"                 # Screenshot and annotation tool
+cask "vlc"                    # Media player
+cask "whatsapp"               # Messaging app
+cask "zerotier-one"           # Mesh VPN client
+
+mas "Amazon Kindle", id: 302584613 # Ebook reader (requires App Store sign-in)
+
+cask "discord"                # Gaming communication
+cask "nvidia-geforce-now"     # Cloud gaming
+cask "steam"                  # Steam game client
